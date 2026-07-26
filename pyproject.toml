@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memory-store"
+version = "0.1.0"
+description = "Local-first agent memory store scaffold built around ArcadeDB Embedded."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "arcadedb-embedded",
+    "fastapi",
+    "fastembed",
+    "pydantic>=2,<3",
+    "PyYAML",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy",
+    "pytest",
+    "ruff",
+]
+
+[project.scripts]
+memory-store = "memory_store.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["memory_store*"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["memory_store", "tests"]
+warn_unused_configs = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true

@@ -1,0 +1,466 @@
+"""Repository helpers that encapsulate ArcadeDB access details."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
+from typing import Any
+from uuid import uuid4
+
+from ..errors import MemoryNotFoundError, PersistenceError
+from ..models import MemoryCreate, MemoryRecord, MemoryStatus, MemoryType, MemoryUpdate, Scope
+from .schema import EDGE_TYPES, FULL_TEXT_INDEX_FIELDS, MEMORY_RECORD_VERTEX
+
+_NULLABLE_FULL_TEXT_FIELDS = tuple(
+	field_name for field_name in FULL_TEXT_INDEX_FIELDS if field_name not in {"text", "tags_text"}
+)
+from .transactions import managed_transaction
+
+
+def _utcnow() -> datetime:
+	return datetime.now(timezone.utc)
+
+
+class ArcadeMemoryRepository:
+	"""Encapsulates persistence operations for memory records."""
+
+	def __init__(self, database: Any, *, schema_version: int) -> None:
+		self._database = database
+		self._schema_version = schema_version
+
+	@property
+	def database(self) -> Any:
+		return self._database
+
+	def insert_memory(self, memory: MemoryCreate | MemoryRecord) -> MemoryRecord:
+		return self._insert_memory(memory, use_transaction=True)
+
+	def get_memory(self, memory_id: str) -> MemoryRecord | None:
+		record = self._lookup_vertex(memory_id)
+		if record is None:
+			return None
+		return self._hydrate_record(record.to_dict())
+
+	def update_memory(self, memory_id: str, patch: MemoryUpdate) -> MemoryRecord:
+		return self._update_memory(memory_id, patch, use_transaction=True)
+
+	def upsert_memory(self, memory: MemoryCreate, stable_key: str | None = None) -> MemoryRecord:
+		resolved_stable_key = stable_key or memory.stable_key
+		if resolved_stable_key is None:
+			return self.insert_memory(memory)
+
+		existing = self.get_by_stable_key(resolved_stable_key)
+		if existing is None:
+			return self.insert_memory(memory.model_copy(update={"stable_key": resolved_stable_key}))
+
+		merged = self._replace_record(existing, memory, stable_key=resolved_stable_key)
+		return self._persist_existing(merged, use_transaction=True)
+
+	def get_by_stable_key(self, stable_key: str) -> MemoryRecord | None:
+		rows = self._database.query(
+			"sql",
+			f"SELECT FROM {MEMORY_RECORD_VERTEX} WHERE stable_key = ? LIMIT 1",
+			stable_key,
+		)
+		first = rows.first()
+		if first is None:
+			return None
+		return self._hydrate_record(first.to_dict())
+
+	def list_by_scope(self, scope: Scope) -> list[MemoryRecord]:
+		return self._query_records(*self._select_where(*self._scope_where(scope)))
+
+	def list_matching_scope(self, scope: Scope | None = None) -> list[MemoryRecord]:
+		if scope is None:
+			return self._query_records(f"SELECT FROM {MEMORY_RECORD_VERTEX}", [])
+		return self._query_records(*self._select_where(*self._scope_filter_where(scope)))
+
+	def list_by_chunk_id(self, chunk_id: str) -> list[MemoryRecord]:
+		return self._query_records(
+			f"SELECT FROM {MEMORY_RECORD_VERTEX} WHERE chunk_id = ?",
+			[chunk_id],
+		)
+
+	def get_chunk_by_id(self, chunk_id: str, *, scope: Scope | None = None) -> MemoryRecord | None:
+		query, params = self._select_document_chunk_where(["chunk_id = ?"], [chunk_id], scope=scope)
+		records = self._query_records(query, params)
+		if not records:
+			return None
+		return records[0]
+
+	def list_by_source_path(
+		self,
+		source_path: str,
+		*,
+		scope: Scope | None = None,
+		memory_type: MemoryType | None = None,
+	) -> list[MemoryRecord]:
+		where_parts = ["source_path LIKE ?"]
+		args: list[Any] = [source_path]
+		if memory_type is not None:
+			where_parts.append("memory_type = ?")
+			args.append(memory_type.value)
+		if scope is not None:
+			scope_clause, scope_args = self._scope_where(scope)
+			where_parts.extend(scope_clause)
+			args.extend(scope_args)
+
+		query, params = self._select_where(where_parts, args)
+		if memory_type == MemoryType.DOCUMENT_CHUNK:
+			query = self._append_document_chunk_order(query)
+		records = self._query_records(query, params)
+		return [record for record in records if record.source_path == source_path]
+
+	def list_chunks_by_source_path(
+		self,
+		source_path: str,
+		*,
+		scope: Scope | None = None,
+	) -> list[MemoryRecord]:
+		query, params = self._select_document_chunk_where(
+			["source_path LIKE ?"],
+			[source_path],
+			scope=scope,
+		)
+		records = self._query_records(query, params)
+		return [record for record in records if record.source_path == source_path]
+
+	def list_chunk_window(
+		self,
+		source_path: str,
+		*,
+		scope: Scope,
+		document_chunk_index: int,
+		before: int,
+		after: int,
+	) -> list[MemoryRecord]:
+		window_before = max(before, 0)
+		window_after = max(after, 0)
+		lower_bound = max(document_chunk_index - window_before, 0)
+		upper_bound = max(document_chunk_index + window_after, lower_bound)
+		query, params = self._select_document_chunk_where(
+			[
+				"source_path LIKE ?",
+				"document_chunk_index >= ?",
+				"document_chunk_index <= ?",
+			],
+			[source_path, lower_bound, upper_bound],
+			scope=scope,
+		)
+		records = self._query_records(query, params)
+		return [record for record in records if record.source_path == source_path]
+
+	def list_by_source_hash(self, source_hash: str) -> list[MemoryRecord]:
+		return self._query_records(
+			f"SELECT FROM {MEMORY_RECORD_VERTEX} WHERE source_hash = ?",
+			[source_hash],
+		)
+
+	def delete_memory(self, memory_id: str) -> None:
+		self._delete_memory(memory_id, use_transaction=True)
+
+	def create_edge(
+		self,
+		from_memory_id: str,
+		to_memory_id: str,
+		edge_type: str,
+		properties: Mapping[str, Any] | None = None,
+	) -> None:
+		self._create_edge(
+			from_memory_id,
+			to_memory_id,
+			edge_type,
+			properties=properties,
+			use_transaction=True,
+		)
+
+	def _create_edge(
+		self,
+		from_memory_id: str,
+		to_memory_id: str,
+		edge_type: str,
+		properties: Mapping[str, Any] | None = None,
+		*,
+		use_transaction: bool,
+	) -> None:
+		if edge_type not in EDGE_TYPES:
+			raise PersistenceError(f"Unsupported edge type: {edge_type}")
+
+		source = self._lookup_vertex(from_memory_id)
+		target = self._lookup_vertex(to_memory_id)
+		if source is None or target is None:
+			raise MemoryNotFoundError(
+				"Both source and target memories must exist before creating an edge."
+			)
+
+		edge_properties = dict(properties or {})
+		edge_properties.setdefault("created_at", _utcnow())
+
+		with managed_transaction(self._database, enabled=use_transaction):
+			edge = source.modify().new_edge(edge_type, target, **edge_properties)
+			edge.save()
+
+	def read_one_hop_neighbors(
+		self,
+		memory_id: str,
+		*,
+		edge_types: Sequence[str] | None = None,
+	) -> list[MemoryRecord]:
+		return [
+			neighbor
+			for _edge_type, neighbor in self.read_one_hop_links(memory_id, edge_types=edge_types)
+		]
+
+	def read_one_hop_links(
+		self,
+		memory_id: str,
+		*,
+		edge_types: Sequence[str] | None = None,
+	) -> list[tuple[str, MemoryRecord]]:
+		record = self._lookup_vertex(memory_id)
+		if record is None:
+			raise MemoryNotFoundError(f"Memory record was not found: {memory_id}")
+
+		labels = tuple(edge_types or EDGE_TYPES)
+		neighbors: list[tuple[str, MemoryRecord]] = []
+		seen: set[tuple[str, str]] = set()
+
+		for label in labels:
+			for edge in record.get_both_edges(label):
+				outgoing = edge.get_out()
+				incoming = edge.get_in()
+				neighbor = incoming if outgoing.get("memory_id") == memory_id else outgoing
+				hydrated = self._hydrate_record(neighbor.to_dict())
+				key = (label, hydrated.memory_id)
+				if key in seen:
+					continue
+				seen.add(key)
+				neighbors.append((label, hydrated))
+
+		return neighbors
+
+	def mark_status(self, memory_id: str, status: MemoryStatus) -> MemoryRecord:
+		return self.update_memory(memory_id, MemoryUpdate(status=status))
+
+	def count_memories(
+		self,
+		*,
+		scope: Scope | None = None,
+		status: MemoryStatus | None = None,
+		memory_type: MemoryType | None = None,
+	) -> int:
+		where_parts: list[str] = []
+		args: list[Any] = []
+
+		if scope is not None:
+			scope_clause, scope_args = self._scope_where(scope)
+			where_parts.extend(scope_clause)
+			args.extend(scope_args)
+		if status is not None:
+			where_parts.append("status = ?")
+			args.append(status.value)
+		if memory_type is not None:
+			where_parts.append("memory_type = ?")
+			args.append(memory_type.value)
+
+		query, params = self._select_where(where_parts, args, projection="count(*) as count")
+		result = self._database.query("sql", query, *params).first()
+		if result is None:
+			return 0
+		return int(result.get("count") or 0)
+
+	def _insert_memory(
+		self,
+		memory: MemoryCreate | MemoryRecord,
+		*,
+		use_transaction: bool,
+	) -> MemoryRecord:
+		record = memory if isinstance(memory, MemoryRecord) else self._new_record(memory)
+
+		with managed_transaction(self._database, enabled=use_transaction):
+			vertex = self._database.new_vertex(MEMORY_RECORD_VERTEX)
+			self._apply_properties(vertex, self._serialize_record(record))
+			vertex.save()
+
+		return record
+
+	def _update_memory(
+		self,
+		memory_id: str,
+		patch: MemoryUpdate,
+		*,
+		use_transaction: bool,
+	) -> MemoryRecord:
+		existing = self.get_memory(memory_id)
+		if existing is None:
+			raise MemoryNotFoundError(f"Memory record was not found: {memory_id}")
+
+		patch_values = patch.model_dump(exclude_unset=True, mode="python")
+		merged = MemoryRecord.model_validate(
+			{
+				**existing.model_dump(mode="python"),
+				**patch_values,
+				"memory_id": existing.memory_id,
+				"created_at": existing.created_at,
+				"updated_at": _utcnow(),
+				"version": existing.version + 1,
+			}
+		)
+		return self._persist_existing(merged, use_transaction=use_transaction)
+
+	def _persist_existing(self, record: MemoryRecord, *, use_transaction: bool) -> MemoryRecord:
+		existing = self._lookup_vertex(record.memory_id)
+		if existing is None:
+			raise MemoryNotFoundError(f"Memory record was not found: {record.memory_id}")
+
+		with managed_transaction(self._database, enabled=use_transaction):
+			mutable = existing.modify()
+			self._apply_properties(mutable, self._serialize_record(record))
+			mutable.save()
+
+		return record
+
+	def _delete_memory(self, memory_id: str, *, use_transaction: bool) -> None:
+		existing = self._lookup_vertex(memory_id)
+		if existing is None:
+			raise MemoryNotFoundError(f"Memory record was not found: {memory_id}")
+
+		with managed_transaction(self._database, enabled=use_transaction):
+			existing.delete()
+
+	def _lookup_vertex(self, memory_id: str) -> Any | None:
+		try:
+			return self._database.lookup_by_key(MEMORY_RECORD_VERTEX, ["memory_id"], [memory_id])
+		except Exception as exc:
+			raise PersistenceError(f"Failed to lookup memory {memory_id}: {exc}") from exc
+
+	def _new_record(self, memory: MemoryCreate) -> MemoryRecord:
+		now = _utcnow()
+		payload = memory.model_dump(mode="python")
+		payload.update(
+			{
+				"memory_id": str(uuid4()),
+				"created_at": now,
+				"updated_at": now,
+				"schema_version": self._schema_version,
+				"version": 1,
+			}
+		)
+		return MemoryRecord.model_validate(payload)
+
+	def _replace_record(
+		self,
+		existing: MemoryRecord,
+		replacement: MemoryCreate,
+		*,
+		stable_key: str,
+	) -> MemoryRecord:
+		payload = existing.model_dump(mode="python")
+		payload.update(replacement.model_dump(mode="python"))
+		payload.update(
+			{
+				"memory_id": existing.memory_id,
+				"stable_key": stable_key,
+				"created_at": existing.created_at,
+				"updated_at": _utcnow(),
+				"version": existing.version + 1,
+				"schema_version": self._schema_version,
+			}
+		)
+		return MemoryRecord.model_validate(payload)
+
+	def _query_records(self, query: str, params: list[Any]) -> list[MemoryRecord]:
+		results = self._database.query("sql", query, *params)
+		return [self._hydrate_record(row.to_dict()) for row in results]
+
+	def _select_where(
+		self,
+		where_parts: list[str],
+		args: list[Any],
+		*,
+		projection: str = "*",
+	) -> tuple[str, list[Any]]:
+		if projection == "*":
+			query = f"SELECT FROM {MEMORY_RECORD_VERTEX}"
+		else:
+			query = f"SELECT {projection} FROM {MEMORY_RECORD_VERTEX}"
+		if where_parts:
+			query += " WHERE " + " AND ".join(where_parts)
+		return query, args
+
+	def _select_document_chunk_where(
+		self,
+		where_parts: list[str],
+		args: list[Any],
+		*,
+		scope: Scope | None = None,
+	) -> tuple[str, list[Any]]:
+		chunk_where = list(where_parts)
+		chunk_args = list(args)
+		chunk_where.append("memory_type = ?")
+		chunk_args.append(MemoryType.DOCUMENT_CHUNK.value)
+		if scope is not None:
+			scope_clause, scope_args = self._scope_where(scope)
+			chunk_where.extend(scope_clause)
+			chunk_args.extend(scope_args)
+		query, params = self._select_where(chunk_where, chunk_args)
+		return self._append_document_chunk_order(query), params
+
+	def _append_document_chunk_order(self, query: str) -> str:
+		return (
+			query
+			+ " ORDER BY document_chunk_index ASC, section_index ASC, "
+			+ "section_chunk_index ASC, memory_id ASC"
+		)
+
+	def _scope_where(self, scope: Scope) -> tuple[list[str], list[Any]]:
+		where_parts: list[str] = []
+		args: list[Any] = []
+		for field_name in ("user_id", "project_id", "agent_id"):
+			value = getattr(scope, field_name)
+			if value is None:
+				where_parts.append(f"{field_name} IS NULL")
+			else:
+				where_parts.append(f"{field_name} = ?")
+				args.append(value)
+		return where_parts, args
+
+	def _scope_filter_where(self, scope: Scope) -> tuple[list[str], list[Any]]:
+		if scope.is_global:
+			return self._scope_where(scope)
+
+		where_parts: list[str] = []
+		args: list[Any] = []
+		for field_name in ("user_id", "project_id", "agent_id"):
+			value = getattr(scope, field_name)
+			if value is None:
+				continue
+			where_parts.append(f"{field_name} = ?")
+			args.append(value)
+		return where_parts, args
+
+	def _serialize_record(self, record: MemoryRecord) -> dict[str, Any]:
+		payload = record.model_dump(mode="python", exclude={"scope"})
+		payload.pop("content", None)
+		payload["tags_text"] = " ".join(record.tags)
+		for field_name in _NULLABLE_FULL_TEXT_FIELDS:
+			if payload.get(field_name) is None:
+				payload[field_name] = ""
+		return payload
+
+	def _hydrate_record(self, payload: Mapping[str, Any]) -> MemoryRecord:
+		data = dict(payload)
+		data.pop("tags_text", None)
+		for field_name in _NULLABLE_FULL_TEXT_FIELDS:
+			if data.get(field_name) == "":
+				data[field_name] = None
+		data["scope"] = {
+			"user_id": data.get("user_id"),
+			"project_id": data.get("project_id"),
+			"agent_id": data.get("agent_id"),
+		}
+		return MemoryRecord.model_validate(data)
+
+	def _apply_properties(self, vertex: Any, properties: Mapping[str, Any]) -> None:
+		for key, value in properties.items():
+			vertex.set(key, value)

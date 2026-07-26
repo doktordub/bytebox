@@ -1,0 +1,246 @@
+You are an expert senior python engeneer specializing in Agentic AI.
+
+Build a local-first Python memory store for AI agents using ArcadeDB Embedded as a single persistence engine for memory records, document chunks, vector indexes, full-text indexes, and lightweight graph relationships. FastEmbed provides local embeddings and optional reranking. The system exposes a Python-first MemoryStore interface, a thin REST API, deterministic markdown ingestion, hybrid retrieval, source-aware scoring, and explicit memory lifecycle controls including superseding, contradiction links, expiration, and user feedback.
+
+Tech Stack
+- Python 3.12+
+- arcadedb-embedded (https://github.com/ArcadeData/arcadedb/releases/tag/26.6.1)(pip install arcadedb-embedded)
+
+** Capabilities
+- FastEmbed dense embeddings
+- ArcadeDB memory records
+- ArcadeDB vector search
+- ArcadeDB full-text search
+- Simple graph edges
+- FastEmbed reranker
+- Weighted normalized scoring
+- Python MemoryStore interface
+
+** Memory Types
+| Memory type              | Example                                                   |               TTL |
+| ------------------------ | --------------------------------------------------------- | ----------------: |
+| **User preference**      | "User prefers lightweight Python frameworks."             |              Long |
+| **Project fact**         | "Project 1 POC has frontend, backend, MCP tiers."         |              Long |
+| **Task memory**          | "User is debugging LocalAI CUDA backend."                 |            Medium |
+| **Conversation summary** | "Discussed ArcadeDB + FastEmbed memory architecture."     |            Medium |
+| **Decision memory**      | "Use FastEmbed reranker after hybrid retrieval."          |              Long |
+| **Observation memory**   | "Tool call failed due to missing CUDA backend."           |    Short / Medium |
+| **Episodic memory**      | "On May 31, user asked about LocalAI 4.3.6."              |            Medium |
+| **Document chunk**       | Markdown section, architecture doc paragraph, code block. | Source-controlled |
+
+** Data Model
+| Field                               | Why it matters                                          |
+| ----------------------------------- | ------------------------------------------------------- |
+| `scope`                             | Prevents one project/user/agent from polluting another  |
+| `confidence`                        | Lets uncertain extracted memories rank lower            |
+| `status`                            | Lets you keep history without retrieving outdated facts |
+| `source_hash`                       | Enables deterministic document re-ingestion             |
+| `embedding_model` / `embedding_dim` | Required for model migration                            |
+| `valid_from` / `valid_to`           | Better than only TTL for facts that change              |
+| `stable_key`                        | Lets you update “same logical memory” over time         |
+
+** Agent memory vs Document chunk
+| Category       | Update behavior                                                  |
+| -------------- | ---------------------------------------------------------------- |
+| Agent memory   | Upsert, supersede, contradict, expire                            |
+| Document chunk | Re-ingest from source, replace by hash, delete if source removed |
+
+** Search Pipeline
+1. Normalize query
+2. Extract filters
+3. Apply hard filters:
+   - user_id
+   - project_id
+   - memory_type
+   - status = active
+   - source type
+4. Dense vector search top N
+5. Full-text search top N
+6. Merge with RRF
+7. Deduplicate by memory ID / stable key / source chunk
+8. Optional one-hop graph expansion
+9. Rerank top 40-80
+10. Apply final memory scoring
+11. Return top K
+
+** First-pass retrieval score
+first-stage retrieval, I recommend Reciprocal Rank Fusion, or RRF, instead of directly mixing normalized vector and BM25 scores.
+Example first-pass fusion: rrf_score = 1 / (k + vector_rank) + 1 / (k + fts_rank)
+Then use weighted scoring after reranking.
+
+** Final memory score
+final_score =
+    0.45 * reranker_score_norm
+  + 0.15 * retrieval_fusion_score_norm
+  + 0.10 * vector_score_norm
+  + 0.08 * fts_score_norm
+  + 0.07 * temporal_score_norm
+  + 0.06 * importance_score_norm
+  + 0.04 * confidence_score_norm
+  + 0.03 * graph_score_norm
+  + 0.02 * user_rating_score_norm
+
+** Temporal score
+  temporal_score = exp(-age_days / half_life_days)
+
+| Memory type          |                Half-life |
+| -------------------- | -----------------------: |
+| User preference      |                 365 days |
+| Project fact         |                 180 days |
+| Task state           |                  30 days |
+| Conversation summary |                  60 days |
+| Observation          |                  14 days |
+| Error/debug note     |                  21 days |
+| Document chunk       | No decay or source-based |
+
+temporal score should not always be a decay penalty. For example:
+| Memory type     | Temporal behavior                              |
+| --------------- | ---------------------------------------------- |
+| User preference | Very slow decay; prefer latest if contradicted |
+| Project fact    | Moderate decay unless source-controlled        |
+| Task state      | Strong recency boost                           |
+| Observation     | Strong decay                                   |
+| Decision        | No decay unless superseded                     |
+| Document chunk  | No decay; source version controls freshness    |
+
+
+** Deduplication strategy
+| Case                      | Action                                                         |
+| ------------------------- | -------------------------------------------------------------- |
+| Same fact, newer wording  | Update same `stable_key`; increment version                    |
+| Same fact, more detail    | Merge text; preserve previous version                          |
+| Same fact, changed value  | Mark previous as `superseded`; link `SUPERSEDES`               |
+| True contradiction        | Keep both; link `CONTRADICTS`; lower confidence until resolved |
+| Low confidence extraction | Store as `observation`, not `project_fact`                     |
+| User explicitly confirms  | Promote confidence and importance                              |
+| User corrects memory      | Mark old memory superseded immediately                         |
+
+** Memory promotion rules
+Not every observation should become long-term memory.
+Recommended flow:
+raw observation
+    -> candidate memory
+    -> scored for usefulness
+    -> promoted to active memory
+    -> updated / expired / superseded over time
+
+Promotion criteria:
+| Signal                   | Example                                         |
+| ------------------------ | ----------------------------------------------- |
+| Repeated mention         | User keeps discussing LocalAI CUDA backend      |
+| Explicit user preference | “I prefer lightweight Python frameworks”        |
+| Project-level fact       | “BB1 uses frontend/backend/MCP tiers”           |
+| Decision                 | “Use FastEmbed reranker after hybrid retrieval” |
+| High future utility      | Common constraint likely to matter later        |
+
+** privacy and safety controls
+Recommended features:
+  memory_store.forget(memory_id)
+  memory_store.forget_by_user(user_id)
+  memory_store.export_user_memories(user_id)
+  memory_store.disable_memory(scope)
+  memory_store.redact(patterns=[...])
+
+Also add metadata:
+  sensitivity: Literal["public", "internal", "private", "sensitive"]
+  retention_policy: str
+  allow_retrieval: bool
+  allow_llm_context: bool
+This gives you a clean path for user-controlled memory.
+
+** Embedding Strategies
+Provide config.yaml options
+Embeddings will work on markdown files that have the following structure:
+- Frontmatter: name (1024 chars), description (8192 chars), tags (array), version (32 cahrs), owner (256 chars)
+- Standard markdown file with headings, sections, etc.
+Recommended default:
+chunking:
+  strategy: markdown_section
+  max_tokens: 350
+  overlap_tokens: 50
+  include_heading_path: true
+  include_frontmatter_in_embedding: true
+  preserve_code_blocks: true
+
+Avoid sentence-level embedding as the default. Sentence chunks are often too small and lose context. Section or paragraph chunks with heading context are usually better for architecture docs.
+
+For embedding text, do not embed only the body. Embed a constructed search string:
+
+  Title: BB1 POC Architecture
+  Description: Frontend, backend, MCP tiers
+  Tags: python, agent-framework, fastmcp
+  Section: Backend > Memory Store
+  Content: ...
+
+** Deliverables
+- Lightweight python module - Use the Python interface as the primary API. Keep REST as a wrapper.
+  - module for including in pyhon projects
+  - module - a wrapper that exposes a /REST api to interact w/ ArchadeDB, perform embeddings, etc.
+    - POST /memories
+    - GET  /memories/{id}
+    - POST /memories/search
+    - POST /documents/ingest
+    - POST /documents/ingest-folder
+    - POST /memories/{id}/feedback
+    - POST /memories/{id}/forget
+    - GET  /health
+    - GET  /stats
+  - configs via code or via config.yaml 
+    - defaults < config.yaml < environment variables < explicit code arguments
+- Lightweitght utilitiy for performing mass embeddings
+- Module structure
+  - arcade - ArcadeDB code
+  - tools - embedding and retreval tools
+  - wrapper - wrapper that exposes REST interface for arcade
+- Documentation with examples 
+  - embedding examples
+  - retreval examples
+  - REST examples
+- deterministic chunk IDs for markdown ingestion: chunk_id = sha256(source_path + heading_path + chunk_index + content_hash)
+  | File change                   | Action                 |
+  | ----------------------------- | ---------------------- |
+  | Same content hash             | Skip                   |
+  | Same section, changed text    | Update + re-embed      |
+  | New section                   | Insert                 |
+  | Removed section               | Mark deleted or remove |
+  | Renamed file but same content | Optionally relink      |
+
+** ArcadeDB-specific recommendations
+Important implementation notes:
+| Area              | Recommendation                                                       |
+| ----------------- | -------------------------------------------------------------------- |
+| Vector metric     | Use cosine for text embeddings                                       |
+| Vector dimensions | Store and validate dimension per model                               |
+| Full-text fields  | Index `title`, `summary`, `text`, `tags`, `source_path`              |
+| Metadata filters  | Index `memory_type`, `project_id`, `user_id`, `status`, `created_at` |
+| Transactions      | Batch inserts/updates in transactions                                |
+| Graph expansion   | Limit to 1 hop in V1                                                 |
+| Embedded mode     | Good for local tools, tests, and single-process agents               |
+| REST mode         | Use your own FastAPI wrapper for clean API boundaries                |
+
+** Evaluations
+Create a small evals/ folder with golden queries (Without evals, the scoring weights will be guesses.):
+- query: "What reranking approach did we choose?"
+  expected_memory_ids:
+    - decision_fastembed_reranker
+
+- query: "What is the BB1 architecture?"
+  expected_memory_types:
+    - project_fact
+    - document_chunk
+
+- query: "What LocalAI issue was the user debugging?"
+  expected_memory_types:
+    - task_state
+    - observation
+
+| Metric             | Purpose                      |
+| ------------------ | ---------------------------- |
+| Recall@10          | Did the right memory appear? |
+| MRR                | Did it rank near the top?    |
+| NDCG               | Ranking quality              |
+| Latency p50/p95    | Agent usability              |
+| Reranker cost/time | Keeps retrieval bounded      |
+| Duplicate rate     | Measures ingestion quality   |
+| Stale memory rate  | Measures lifecycle quality   |
+

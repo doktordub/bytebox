@@ -1,0 +1,61 @@
+queries:
+  - id: rerank-decision
+    query: What reranking approach did we choose?
+    scope:
+      project_id: arcade
+    expected_memory_ids:
+      - decision_fastembed_reranker
+    expected_memory_types:
+      - decision
+
+  - id: bb1-architecture
+    query: What is the BB1 architecture?
+    scope:
+      project_id: bb1
+    expected_memory_types:
+      - project_fact
+      - document_chunk
+
+  - id: localai-debug-note
+    query: What LocalAI issue was the user debugging?
+    scope:
+      project_id: arcade
+    expected_memory_types:
+      - task_state
+      - observation
+      - error_debug_note
+
+  - id: document-chunk-retrieval
+    mode: chunk
+    query: Show the chunk that describes hybrid retrieval and score diagnostics.
+    scope:
+      project_id: arcade
+    before: 1
+    after: 1
+    expected_memory_types:
+      - document_chunk
+    # Optional when your corpus and chunk IDs are stable enough to lock exactly:
+    # expected_chunk_ids:
+    #   - docs/architecture.md#...
+    # expected_before_chunk_ids:
+    #   - docs/architecture.md#...
+    # expected_after_chunk_ids:
+    #   - docs/architecture.md#...
+
+  - id: stale-memory-exclusion
+    query: Which reranking decision is currently active?
+    scope:
+      project_id: arcade
+    expected_memory_ids:
+      - decision_fastembed_reranker
+    expected_statuses:
+      - active
+
+  - id: privacy-exclusion
+    query: Which project facts are safe to include in model context?
+    scope:
+      project_id: arcade
+    expected_memory_types:
+      - project_fact
+    expected_statuses:
+      - active
