@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from memory_store.config import MemoryStoreSettings
 from memory_store.errors import IngestionError, PersistenceError
 from memory_store.models import (
@@ -398,3 +400,50 @@ def test_ingest_folder_applies_since_limit_and_emits_progress(monkeypatch, tmp_p
         "failed_files": 0,
         "ok": True,
     }
+
+
+def test_ingest_folder_rejects_paths_outside_configured_roots(tmp_path: Path) -> None:
+    allowed_root = tmp_path / "allowed"
+    outside_root = tmp_path / "outside"
+    allowed_root.mkdir()
+    outside_root.mkdir()
+    (outside_root / "a.md").write_text("# A", encoding="utf-8")
+
+    service = _make_service(tmp_path)
+    service.settings = MemoryStoreSettings(
+        application={"state_dir": tmp_path / "state"},
+        database={"path": tmp_path / "arcade"},
+        security={"ingest_roots": [allowed_root]},
+    )
+
+    with pytest.raises(IngestionError):
+        service.ingest_folder(outside_root, Scope(project_id="docs"))
+
+
+def test_ingest_folder_defaults_manifest_under_state_dir(monkeypatch, tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("# A", encoding="utf-8")
+
+    service = _make_service(tmp_path)
+    service.settings = MemoryStoreSettings(
+        application={"state_dir": tmp_path / "state"},
+        database={"path": tmp_path / "arcade"},
+    )
+
+    def fake_ingest_document(path: str | Path, scope: Scope, **kwargs: Any) -> IngestResult:
+        del scope, kwargs
+        return IngestResult(path=Path(path), added=1, timings=IngestTimings(elapsed_ms=1))
+
+    monkeypatch.setattr(service, "ingest_document", fake_ingest_document)
+
+    result = service.ingest_folder(
+        docs,
+        Scope(project_id="docs"),
+        connection_strategy=FolderIngestConnectionStrategy.SHARED_STORE,
+    )
+
+    assert result.ok is True
+    assert result.manifest_path is not None
+    assert result.manifest_path.is_relative_to(tmp_path / "state")
+    assert result.manifest_path.exists()

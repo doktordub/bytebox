@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import json
+import ssl
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-
 from memory_store.api.main import create_app
 from memory_store.arcade import arcade_runtime_available
 from memory_store.cli import main
+from memory_store.embeddings.fastembed_provider import fastembed_runtime_available
 from memory_store.errors import MemoryNotFoundError
 from memory_store.models import (
     ImportResult,
@@ -26,6 +27,9 @@ from memory_store.models import (
     MemoryUpdate,
     Scope,
 )
+
+from bytebox.api.security import build_api_tls_context
+from bytebox.config import ByteBoxSettings
 
 
 def _record(**overrides: Any) -> MemoryRecord:
@@ -225,7 +229,11 @@ class FakeStore:
 
 def test_rest_routes_delegate_to_store_and_enforce_local_token() -> None:
     store = FakeStore()
-    app = create_app(store=store, api={"local_api_token": "secret-token"})
+    app = create_app(
+        store=store,
+        api={"local_api_token": "secret-token"},
+        security={"hard_delete_enabled": True},
+    )
 
     with TestClient(app) as client:
         unauthorized = client.get("/health")
@@ -293,7 +301,6 @@ def test_rest_routes_delegate_to_store_and_enforce_local_token() -> None:
                 "continue_on_error": True,
                 "resume_from": "b.md",
                 "connection_strategy": "shared_store",
-                "manifest_path": "docs/.memory_store_ingest_manifest.json",
                 "only_failed": True,
                 "limit": 2,
                 "since": "2026-07-01T00:00:00+00:00",
@@ -338,12 +345,22 @@ def test_rest_routes_delegate_to_store_and_enforce_local_token() -> None:
                 "mode": "upsert",
             },
         )
+        assert import_response.status_code == 422
+
+        import_response = client.post(
+            "/memories/import",
+            headers={**headers, "X-Idempotency-Key": "import-1"},
+            json={
+                "payload": {"records": [_record().model_dump(mode="json")], "source": "api"},
+                "mode": "upsert",
+            },
+        )
         assert import_response.status_code == 200
         assert import_response.json()["inserted"] == 1
 
         delete_response = client.post(
             "/memories/delete-by-scope",
-            headers=headers,
+            headers={**headers, "X-Confirm-Delete": "hard-delete"},
             json={"scope": {"project_id": "arcade"}, "hard_delete": True},
         )
         assert delete_response.status_code == 200
@@ -383,7 +400,6 @@ def test_rest_routes_delegate_to_store_and_enforce_local_token() -> None:
         "continue_on_error": True,
         "resume_from": "b.md",
         "connection_strategy": "shared_store",
-        "manifest_path": Path("docs/.memory_store_ingest_manifest.json"),
         "only_failed": True,
         "limit": 2,
         "since": datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc),
@@ -473,6 +489,159 @@ def test_rest_app_smoke_flows_against_real_store(tmp_path) -> None:
         stats_response = client.get("/stats")
         assert stats_response.status_code == 200
         assert stats_response.json()["total_records"] == 1
+
+
+def test_rest_routes_return_sanitized_error_envelopes_and_enforce_scopes() -> None:
+    store = FakeStore()
+    app = create_app(
+        store=store,
+        api={
+            "auth": {
+                "tokens": [
+                    {
+                        "name": "reader",
+                        "token": "reader-token",
+                        "scopes": ["memory:read", "admin:read"],
+                    },
+                    {
+                        "name": "writer",
+                        "token": "writer-token",
+                        "scopes": ["memory:write"],
+                    },
+                ]
+            }
+        },
+    )
+
+    with TestClient(app) as client:
+        forbidden = client.post(
+            "/memories",
+            headers={"X-API-Token": "reader-token"},
+            json={
+                "memory": {
+                    "scope": {"project_id": "arcade"},
+                    "title": "Adapter note",
+                    "text": "Adapters should stay thin.",
+                },
+                "embed": False,
+            },
+        )
+        assert forbidden.status_code == 403
+        assert forbidden.json()["error"]["code"] == "BYTEBOX_FORBIDDEN"
+        assert "Adapters should stay thin" not in json.dumps(forbidden.json())
+
+        missing = client.get("/memories/missing", headers={"X-API-Token": "reader-token"})
+        assert missing.status_code == 404
+        assert missing.json()["error"]["code"] == "BYTEBOX_RESOURCE_NOT_FOUND"
+        assert "missing" not in json.dumps(missing.json())
+        assert missing.headers["X-Trace-ID"]
+
+
+def test_rest_ingest_folder_rejects_manifest_path_input() -> None:
+    store = FakeStore()
+    app = create_app(store=store, api={"local_api_token": "secret-token"})
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/documents/ingest-folder",
+            headers={"X-API-Token": "secret-token"},
+            json={
+                "path": "docs",
+                "scope": {"project_id": "arcade"},
+                "manifest_path": "docs/.bytebox_ingest_manifest.json",
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "BYTEBOX_INVALID_REQUEST"
+
+
+def test_request_body_limit_returns_sanitized_413() -> None:
+    store = FakeStore()
+    app = create_app(
+        store=store,
+        api={
+            "local_api_token": "secret-token",
+            "max_request_body_bytes": 32,
+        },
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/memories/search",
+            headers={"X-API-Token": "secret-token"},
+            json={"scope": {"project_id": "arcade"}, "text": "x" * 200},
+        )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "BYTEBOX_REQUEST_TOO_LARGE"
+    assert store.calls == []
+
+
+def test_trusted_host_rejection_returns_stable_error_envelope() -> None:
+    store = FakeStore()
+    app = create_app(store=store, api={"trusted_hosts": ["api.local"]})
+
+    with TestClient(app) as client:
+        response = client.get("/health", headers={"Host": "evil.local"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "BYTEBOX_TRUSTED_HOST_REJECTED"
+
+
+def test_build_api_tls_context_configures_optional_mtls(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, Any] = {}
+
+    class FakeContext:
+        def __init__(self) -> None:
+            self.verify_mode = ssl.CERT_NONE
+
+        def load_cert_chain(
+            self,
+            *,
+            certfile: str,
+            keyfile: str | None = None,
+            password: str | None = None,
+        ) -> None:
+            calls["cert_chain"] = (certfile, keyfile, password)
+
+        def load_verify_locations(
+            self,
+            *,
+            cafile: str | None = None,
+            capath: str | None = None,
+            cadata: str | None = None,
+        ) -> None:
+            calls["verify_locations"] = (cafile, capath, cadata)
+
+    monkeypatch.setattr(
+        "bytebox.api.security.ssl.create_default_context",
+        lambda purpose: FakeContext(),
+    )
+
+    settings = ByteBoxSettings(
+        api={
+            "tls": {
+                "enabled": True,
+                "cert_file": "tls/server.crt",
+                "key_file": "tls/server.key",
+                "key_password": "top-secret",
+                "client_ca_file": "tls/ca.crt",
+                "require_client_certificate": True,
+            }
+        }
+    )
+
+    context = build_api_tls_context(settings.api.tls)
+
+    assert isinstance(context, FakeContext)
+    assert calls["cert_chain"] == (
+        str(Path("tls/server.crt")),
+        str(Path("tls/server.key")),
+        "top-secret",
+    )
+    assert calls["verify_locations"] == (str(Path("tls/ca.crt")), None, None)
+    assert context.verify_mode == ssl.CERT_REQUIRED
 
 
 def test_cli_commands_delegate_to_store_and_eval_runner(monkeypatch, capsys, tmp_path) -> None:
@@ -594,9 +763,15 @@ def test_cli_commands_delegate_to_store_and_eval_runner(monkeypatch, capsys, tmp
 
 
 def test_cli_unlock_delegates_to_arcade_unlock(monkeypatch, capsys, tmp_path) -> None:
+    settings = type(
+        "Settings",
+        (),
+        {"database": type("DB", (), {"path": tmp_path / "arcade"})()},
+    )()
+
     monkeypatch.setattr(
         "memory_store.cli.load_settings",
-        lambda config_path=None: type("Settings", (), {"database": type("DB", (), {"path": tmp_path / "arcade"})()})(),
+        lambda config_path=None: settings,
     )
     monkeypatch.setattr(
         "memory_store.cli.unlock_arcade_database",
@@ -613,3 +788,321 @@ def test_cli_unlock_delegates_to_arcade_unlock(monkeypatch, capsys, tmp_path) ->
     unlock_output = json.loads(capsys.readouterr().out)
     assert unlock_output["removed"] is True
     assert unlock_output["force"] is True
+
+
+def test_cli_backup_and_restore_delegate_to_arcade_helpers(monkeypatch, capsys, tmp_path) -> None:
+    database_path = tmp_path / "arcade"
+    backup_path = tmp_path / "arcade-backup"
+    settings = type(
+        "Settings",
+        (),
+        {"database": type("DB", (), {"path": database_path})()},
+    )()
+
+    monkeypatch.setattr(
+        "memory_store.cli.load_settings",
+        lambda config_path=None: settings,
+    )
+    monkeypatch.setattr(
+        "memory_store.cli.backup_arcade_database",
+        lambda path, destination=None, overwrite=False: {
+            "database_path": str(path),
+            "backup_path": str(destination),
+            "created": True,
+            "overwritten": overwrite,
+        },
+    )
+    monkeypatch.setattr(
+        "memory_store.cli.restore_arcade_database",
+        lambda path, backup_path=None, overwrite=False: {
+            "database_path": str(path),
+            "backup_path": str(backup_path),
+            "restored": True,
+            "overwritten": overwrite,
+        },
+    )
+
+    assert main(["backup", "--out", str(backup_path), "--overwrite"]) == 0
+    backup_output = json.loads(capsys.readouterr().out)
+    assert backup_output["database_path"] == str(database_path)
+    assert backup_output["backup_path"] == str(backup_path)
+    assert backup_output["overwritten"] is True
+
+    assert main(["restore", str(backup_path), "--overwrite"]) == 0
+    restore_output = json.loads(capsys.readouterr().out)
+    assert restore_output["database_path"] == str(database_path)
+    assert restore_output["backup_path"] == str(backup_path)
+    assert restore_output["restored"] is True
+
+
+def test_cli_models_commands_manage_local_manifests(monkeypatch, capsys, tmp_path) -> None:
+    source_path = tmp_path / "source-model"
+    source_path.mkdir()
+    (source_path / "model.onnx").write_bytes(b"fake-model")
+
+    settings = ByteBoxSettings.model_validate(
+        {
+            "database": {"path": tmp_path / "data"},
+            "embeddings": {
+                "provider": "fastembed",
+                "model": "stub-model",
+                "model_path": tmp_path / "installed-model",
+                "local_files_only": True,
+                "hf_hub_offline": True,
+                "require_manifest": True,
+                "require_checksums": True,
+                "model_revision": "stub/revision",
+                "model_digest": "sha256:manifest",
+                "dim": 4,
+            },
+            "reranker": {"enabled": False},
+        }
+    )
+
+    monkeypatch.setattr("memory_store.cli.load_settings", lambda config_path=None: settings)
+
+    assert main(["models", "install", "--source", str(source_path)]) == 0
+    install_output = json.loads(capsys.readouterr().out)
+    manifest_path = Path(install_output["manifest_path"])
+    assert manifest_path.exists()
+    assert install_output["verification"]["ok"] is True
+
+    assert main(["models", "list"]) == 0
+    list_output = json.loads(capsys.readouterr().out)
+    assert list_output == [
+        {
+            "capability": "embedding",
+            "provider": "fastembed",
+            "model_name": "stub-model",
+            "model_revision": "stub/revision",
+            "model_digest": "sha256:manifest",
+            "model_path": str(tmp_path / "installed-model"),
+            "manifest_path": str(manifest_path),
+            "strict_offline": True,
+            "runtime_available": fastembed_runtime_available(),
+            "require_manifest": True,
+            "require_checksums": True,
+        }
+    ]
+
+    assert main(["models", "inspect"]) == 0
+    inspect_output = json.loads(capsys.readouterr().out)
+    assert inspect_output["identity"]["model_name"] == "stub-model"
+    assert inspect_output["verification"]["ok"] is True
+
+    assert main(["models", "verify"]) == 0
+    verify_output = json.loads(capsys.readouterr().out)
+    assert verify_output["ok"] is True
+    assert verify_output["verified_files"] == ["model.onnx"]
+
+    export_path = tmp_path / "exported-manifest.yaml"
+    assert main(["models", "export-manifest", "--out", str(export_path)]) == 0
+    export_output = json.loads(capsys.readouterr().out)
+    assert export_output["manifest_path"] == str(export_path)
+    assert export_path.exists()
+
+    assert main(["models", "doctor"]) == 0
+    doctor_output = json.loads(capsys.readouterr().out)
+    assert doctor_output["strict_offline"] is True
+    assert doctor_output["verification"]["ok"] is True
+
+
+def test_cli_config_migrate_rewrites_legacy_yaml_and_redacts_secrets(tmp_path, capsys) -> None:
+    source_path = tmp_path / "legacy-memory-store.yaml"
+    source_path.write_text(
+        """
+database:
+  path: ./data/memory_store
+api:
+  local_api_token: super-secret-token
+  tls:
+    key_password: tls-secret
+application:
+  state_dir: ./state/memory_store
+""".strip(),
+        encoding="utf-8",
+    )
+    migrated_path = tmp_path / "bytebox.yaml"
+
+    assert main(["config", "migrate", str(source_path), "--out", str(migrated_path)]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["source_format"] == "yaml"
+    assert output["preview"]["database"]["path"] == "./data/bytebox"
+    assert output["preview"]["application"]["state_dir"] == "./state/bytebox"
+    assert "local_api_token" not in output["preview"].get("api", {})
+    assert "super-secret-token" not in json.dumps(output)
+
+    migrated_text = migrated_path.read_text(encoding="utf-8")
+    assert "super-secret-token" not in migrated_text
+    assert "tls-secret" not in migrated_text
+    assert "./data/bytebox" in migrated_text
+
+
+def test_cli_config_migrate_translates_env_files_without_copying_secrets(tmp_path, capsys) -> None:
+    source_path = tmp_path / "legacy.env"
+    source_path.write_text(
+        "\n".join(
+            [
+                "MEMORY_STORE_DATABASE__PATH=./data/memory_store",
+                "MEMORY_STORE_APPLICATION__STATE_DIR=./state/memory_store",
+                "MEMORY_STORE_API__LOCAL_API_TOKEN=super-secret-token",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    migrated_path = tmp_path / "bytebox.env"
+
+    assert main(["config", "migrate", str(source_path), "--out", str(migrated_path)]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["source_format"] == "env"
+    assert output["preview"]["BYTEBOX_DATABASE__PATH"] == "./data/bytebox"
+    assert output["preview"]["BYTEBOX_APPLICATION__STATE_DIR"] == "./state/bytebox"
+    assert "super-secret-token" not in json.dumps(output)
+
+    migrated_text = migrated_path.read_text(encoding="utf-8")
+    assert "BYTEBOX_DATABASE__PATH=./data/bytebox" in migrated_text
+    assert "BYTEBOX_API__LOCAL_API_TOKEN" not in migrated_text
+    assert "super-secret-token" not in migrated_text
+
+
+def test_cli_database_phase10_commands_delegate_to_operational_helpers(
+    monkeypatch,
+    capsys,
+    tmp_path,
+) -> None:
+    settings = ByteBoxSettings.model_validate({"database": {"path": tmp_path / "bytebox-db"}})
+    calls: dict[str, Any] = {}
+
+    monkeypatch.setattr("memory_store.cli.load_settings", lambda config_path=None: settings)
+    monkeypatch.setattr(
+        "memory_store.cli.inspect_database",
+        lambda database_path, *, settings: {
+            "command": "inspect",
+            "database_path": str(database_path),
+            "schema_version": settings.database.schema_version,
+        },
+    )
+
+    def fake_migrate(
+        source_database_path,
+        *,
+        settings,
+        target_database_path=None,
+        overwrite=False,
+        dry_run=False,
+        backup_destination=None,
+        search_queries=(),
+        verification_scope=None,
+    ):
+        calls["migrate"] = {
+            "source_database_path": source_database_path,
+            "target_database_path": target_database_path,
+            "overwrite": overwrite,
+            "dry_run": dry_run,
+            "backup_destination": backup_destination,
+            "search_queries": list(search_queries),
+            "verification_scope": verification_scope.model_dump() if verification_scope else None,
+            "schema_version": settings.database.schema_version,
+        }
+        return {"command": "migrate", **calls["migrate"]}
+
+    def fake_verify(database_path, *, settings, search_queries=(), scope=None):
+        calls["verify"] = {
+            "database_path": database_path,
+            "search_queries": list(search_queries),
+            "scope": scope.model_dump() if scope else None,
+            "schema_version": settings.database.schema_version,
+        }
+        return {"command": "verify", **calls["verify"]}
+
+    def fake_reembed(database_path, *, settings, scope=None, limit=None, dry_run=False):
+        calls["reembed"] = {
+            "database_path": database_path,
+            "scope": scope.model_dump() if scope else None,
+            "limit": limit,
+            "dry_run": dry_run,
+            "schema_version": settings.database.schema_version,
+        }
+        return {"command": "reembed", **calls["reembed"]}
+
+    monkeypatch.setattr("memory_store.cli.migrate_database", fake_migrate)
+    monkeypatch.setattr("memory_store.cli.verify_database", fake_verify)
+    monkeypatch.setattr("memory_store.cli.reembed_database", fake_reembed)
+    monkeypatch.setattr(
+        "memory_store.cli.backup_arcade_database",
+        lambda path, destination=None, overwrite=False: {
+            "command": "backup",
+            "database_path": str(path),
+            "backup_path": str(destination),
+            "overwrite": overwrite,
+        },
+    )
+    monkeypatch.setattr(
+        "memory_store.cli.restore_arcade_database",
+        lambda path, backup_path=None, overwrite=False: {
+            "command": "restore",
+            "database_path": str(path),
+            "backup_path": str(backup_path),
+            "overwrite": overwrite,
+        },
+    )
+
+    assert main(["database", "inspect"]) == 0
+    inspect_output = json.loads(capsys.readouterr().out)
+    assert inspect_output["command"] == "inspect"
+    assert inspect_output["database_path"] == str(settings.database.path)
+
+    target_path = tmp_path / "bytebox-db-migrated"
+    backup_path = tmp_path / "backup-copy"
+    assert (
+        main(
+            [
+                "database",
+                "migrate",
+                "--dry-run",
+                "--target-database-path",
+                str(target_path),
+                "--backup-path",
+                str(backup_path),
+                "--search-query",
+                "thin adapters",
+            ]
+        )
+        == 0
+    )
+    migrate_output = json.loads(capsys.readouterr().out)
+    assert migrate_output["command"] == "migrate"
+    assert migrate_output["dry_run"] is True
+    assert migrate_output["target_database_path"] == str(target_path)
+    assert migrate_output["search_queries"] == ["thin adapters"]
+    assert migrate_output["verification_scope"] is None
+
+    assert (
+        main(["database", "verify", "--search-query", "deployment", "--project-id", "arcade"])
+        == 0
+    )
+    verify_output = json.loads(capsys.readouterr().out)
+    assert verify_output["command"] == "verify"
+    assert verify_output["search_queries"] == ["deployment"]
+    assert verify_output["scope"] == {"user_id": None, "project_id": "arcade", "agent_id": None}
+
+    assert main(["database", "reembed", "--dry-run", "--limit", "5"]) == 0
+    reembed_output = json.loads(capsys.readouterr().out)
+    assert reembed_output["command"] == "reembed"
+    assert reembed_output["dry_run"] is True
+    assert reembed_output["limit"] == 5
+    assert reembed_output["scope"] is None
+
+    backup_target = tmp_path / "backup"
+    assert main(["database", "backup", "--out", str(backup_target), "--overwrite"]) == 0
+    backup_output = json.loads(capsys.readouterr().out)
+    assert backup_output["command"] == "backup"
+    assert backup_output["backup_path"] == str(backup_target)
+
+    assert main(["database", "restore", str(backup_target), "--overwrite"]) == 0
+    restore_output = json.loads(capsys.readouterr().out)
+    assert restore_output["command"] == "restore"
+    assert restore_output["backup_path"] == str(backup_target)

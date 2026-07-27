@@ -3,35 +3,53 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "memory-store"
+name = "bytebox"
 version = "0.1.0"
-description = "Local-first agent memory store scaffold built around ArcadeDB Embedded."
+description = "ByteBox is a local-first agent memory system built around ArcadeDB Embedded."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "arcadedb-embedded",
-    "fastapi",
-    "fastembed",
-    "pydantic>=2,<3",
-    "PyYAML",
-    "uvicorn",
+    "arcadedb-embedded==26.7.2",
+    "fastapi==0.140.0",
+    "fastembed==0.8.0",
+    "httpx==0.28.1",
+    "pydantic==2.13.4",
+    "PyYAML==6.0.3",
+    "uvicorn==0.51.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "mypy",
-    "pytest",
-    "ruff",
+    "coverage[toml]==7.15.2",
+    "detect-secrets==1.5.0",
+    "hypothesis==6.161.5",
+    "mypy==2.3.0",
+    "pre-commit==4.3.0",
+    "pytest==9.1.1",
+    "ruff==0.16.0",
 ]
 
 [project.scripts]
-memory-store = "memory_store.cli:main"
+bytebox = "bytebox.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
-include = ["memory_store*"]
+where = ["src"]
+include = ["bytebox*", "memory_store*"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q --strict-markers"
+markers = [
+    "unit: fast in-process behavior checks",
+    "integration: file system, database, or process-boundary coverage",
+    "contract: provider or protocol compatibility coverage",
+    "e2e: CLI or API end-to-end behavior",
+    "security: auth, redaction, path-policy, or abuse-case coverage",
+    "property: property-based coverage for normalization and validation rules",
+    "offline: network-denied or local-only provider coverage",
+]
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -43,8 +61,28 @@ select = ["B", "E", "F", "I"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["memory_store", "tests"]
+files = ["src/bytebox", "src/memory_store", "scripts"]
 warn_unused_configs = true
 check_untyped_defs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
+
+[tool.coverage.run]
+branch = true
+parallel = true
+source = ["bytebox"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = false
+precision = 2
+
+[tool.coverage.html]
+directory = "build/coverage/html"
+
+[tool.coverage.xml]
+output = "build/coverage/coverage.xml"
+
+[tool.coverage.json]
+output = "build/coverage/coverage.json"

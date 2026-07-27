@@ -1,4 +1,4 @@
-"""CLI utility to ingest Markdown files from a folder into the local memory store."""
+"""CLI utility to ingest Markdown files from a folder into the local ByteBox store."""
 
 from __future__ import annotations
 
@@ -7,16 +7,16 @@ import json
 from pathlib import Path
 from typing import Any
 
-from memory_store import MemoryStore, Scope
-from memory_store.models import FolderIngestConnectionStrategy
+from bytebox import ByteBox, Scope
+from bytebox.models import FolderIngestConnectionStrategy
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DATABASE_PATH = REPO_ROOT / "data" / "memory_store"
+DEFAULT_DATABASE_PATH = REPO_ROOT / "data" / "bytebox"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Ingest all Markdown files under a folder into the local memory store."
+        description="Ingest all Markdown files under a folder into the local ByteBox store."
     )
     parser.add_argument(
         "folder",
@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
         "--config-path",
         type=Path,
         default=None,
-        help="Optional config file passed to MemoryStore.from_config().",
+        help="Optional config file passed to ByteBox.from_config().",
     )
     parser.add_argument("--user-id", default="", help="Scope user_id. Default: empty.")
     parser.add_argument(
@@ -81,7 +81,7 @@ def build_scope(args: argparse.Namespace) -> Scope:
 
 
 def build_store(args: argparse.Namespace) -> Any:
-    return MemoryStore.from_config(
+    return ByteBox.from_config(
         args.config_path,
         database={"path": args.database_path.expanduser(), "schema_version": 1},
         reranker={"enabled": args.reranker_enabled},

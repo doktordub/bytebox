@@ -161,10 +161,44 @@ def test_memory_store_validates_existing_index_dimensions(tmp_path) -> None:
         database={"path": tmp_path / "arcade", "schema_version": 1},
         embeddings={"dim": 4},
     )
+    first.health()
     first.close()
 
     with pytest.raises(EmbeddingDimensionMismatchError):
-        MemoryStore.from_config(
+        second = MemoryStore.from_config(
             database={"path": tmp_path / "arcade", "schema_version": 1},
             embeddings={"dim": 8},
         )
+        second.health()
+
+
+def test_memory_store_reembeds_incompatible_embedding_identity(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(service_module, "FastEmbedProvider", _FakeProvider)
+
+    store = MemoryStore.from_config(
+        database={"path": tmp_path / "arcade", "schema_version": 1},
+        embeddings={
+            "dim": 4,
+            "dimension_mismatch": "reembed",
+            "model": "stub-model",
+            "model_revision": "stub/revision",
+        },
+    )
+
+    try:
+        created = store.add_memory(
+            MemoryCreate(
+                text="refresh the legacy provider identity",
+                embedding=[0.1, 0.2, 0.3, 0.4],
+                embedding_dim=4,
+                embedding_model="legacy-model",
+                embedding_model_version="legacy-revision",
+            )
+        )
+
+        assert created.embedding == [0.5, 0.5, 0.5, 0.5]
+        assert created.embedding_model == "stub-model"
+        assert created.embedding_model_version == "stub/revision"
+        assert created.embedding_dim == 4
+    finally:
+        store.close()

@@ -8,8 +8,8 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from memory_store.api import create_app
-from memory_store.models import HealthStatus, MemoryRecord, MemorySearchResult, MemoryStats, Scope
+from bytebox.api import create_app
+from bytebox.models import HealthStatus, MemoryRecord, MemorySearchResult, MemoryStats, Scope
 
 
 def _chunk_payload(

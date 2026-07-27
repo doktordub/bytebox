@@ -1,9 +1,9 @@
-# Local-First Agent Memory Store Architecture
+# ByteBox Architecture
 
 **Document status:** Architecture design draft  
 **Generated:** 2026-06-13  
 **Primary source:** `prompt.md`  
-**System:** Lightweight, portable, local-first Python memory store for AI agents  
+**System:** Lightweight, portable, local-first Python memory system for AI agents  
 
 ---
 
@@ -280,7 +280,7 @@ memory_store/
   examples/
   pyproject.toml
   README.md
-  config.example.yaml
+    bytebox.example.yaml
 ```
 
 ### 6.1 Boundary Rule
@@ -889,7 +889,7 @@ The CLI supports local workflows and mass ingestion without bypassing service lo
 
 ```mermaid
 flowchart TB
-    CLI[memory-store CLI] --> Config[Load config]
+    CLI[bytebox CLI] --> Config[Load config]
     Config --> Store[MemoryStore.from_config]
     Store --> Service[MemoryService]
     Service --> DB[(ArcadeDB Embedded)]
@@ -915,7 +915,7 @@ Source: `prompt.md §16`.
 
 ## 18. Configuration Architecture
 
-`config.example.yaml` must cover database, embeddings, reranker, retrieval, scoring, chunking, privacy, API, and logging.
+`bytebox.example.yaml` must cover database, embeddings, reranker, retrieval, scoring, chunking, privacy, API, and logging.
 
 ### 18.1 Configuration Sections
 
@@ -962,7 +962,7 @@ sequenceDiagram
     participant Metrics as Metrics
     participant Report as Report Writer
 
-    Dev->>Eval: memory-store eval evals/golden_queries.yaml
+    Dev->>Eval: bytebox eval evals/golden_queries.yaml
     Eval->>Store: search(query) for each golden query
     Store-->>Eval: results with scores/debug
     Eval->>Metrics: compute Recall@10, MRR, NDCG, latency, duplicate/stale rates
@@ -1032,7 +1032,7 @@ Deliverables:
 - Pydantic settings/config models
 - error types
 - README stub
-- `config.example.yaml`
+- `bytebox.example.yaml`
 
 Acceptance checks:
 

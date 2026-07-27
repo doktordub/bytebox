@@ -1,0 +1,422 @@
+{
+  "snapshot_date": "2026-07-26",
+  "source_project": {
+    "owner": "doktordub",
+    "repository": "mem-store"
+  },
+  "current_repository": {
+    "name": "bytebox",
+    "branch": "main"
+  },
+  "distribution": {
+    "name": "memory-store",
+    "version": "0.1.0"
+  },
+  "python_package": {
+    "name": "memory_store",
+    "version": "0.1.0",
+    "exports": [
+      "MemoryStore",
+      "MemoryStoreSettings",
+      "Scope",
+      "MemoryCreate",
+      "MemorySearchQuery",
+      "MemoryRecord",
+      "HealthStatus"
+    ],
+    "capabilities": {
+      "construction_and_lifecycle": [
+        "from_config",
+        "close",
+        "__enter__",
+        "__exit__"
+      ],
+      "crud_and_search": [
+        "add_memory",
+        "get_memory",
+        "update_memory",
+        "upsert_memory",
+        "search",
+        "search_document_chunks",
+        "get_chunk",
+        "get_chunk_context"
+      ],
+      "ingestion": [
+        "ingest_document",
+        "ingest_folder"
+      ],
+      "lifecycle_and_graph": [
+        "promote",
+        "supersede",
+        "contradict",
+        "expire",
+        "forget",
+        "forget_by_user",
+        "delete_by_scope",
+        "disable_memory"
+      ],
+      "import_export_and_privacy": [
+        "export_user_memories",
+        "export_scope",
+        "import_memories",
+        "redact",
+        "add_feedback"
+      ],
+      "operations": [
+        "stats",
+        "health"
+      ]
+    }
+  },
+  "cli": {
+    "name": "memory-store",
+    "common_options": [
+      "--config"
+    ],
+    "commands": [
+      "health",
+      "init",
+      "ingest-file",
+      "ingest-folder",
+      "unlock",
+      "search",
+      "search-chunks",
+      "chunk-context",
+      "eval",
+      "export",
+      "delete-by-scope"
+    ]
+  },
+  "config": {
+    "example_file": "config.example.yaml",
+    "env_prefix": "MEMORY_STORE_",
+    "precedence": [
+      "defaults",
+      "yaml",
+      "environment",
+      "explicit_overrides"
+    ],
+    "sections": {
+      "database": [
+        "path",
+        "create_if_missing",
+        "schema_version",
+        "embedded_single_process"
+      ],
+      "embeddings": [
+        "provider",
+        "model",
+        "model_version",
+        "dim",
+        "batch_size",
+        "normalize",
+        "dimension_mismatch"
+      ],
+      "reranker": [
+        "enabled",
+        "provider",
+        "model",
+        "model_version",
+        "top_n"
+      ],
+      "retrieval": [
+        "vector_top_n",
+        "fts_top_n",
+        "rrf_k",
+        "graph_expansion_enabled",
+        "graph_expansion_hops",
+        "final_top_k",
+        "include_component_scores",
+        "include_debug"
+      ],
+      "scoring.weights": [
+        "reranker",
+        "retrieval_fusion",
+        "vector",
+        "full_text",
+        "temporal",
+        "importance",
+        "confidence",
+        "graph",
+        "user_rating"
+      ],
+      "scoring.temporal": [
+        "user_preference",
+        "project_fact",
+        "task_state",
+        "conversation_summary",
+        "observation",
+        "error_debug_note",
+        "decision",
+        "document_chunk"
+      ],
+      "chunking": [
+        "strategy",
+        "max_tokens",
+        "overlap_tokens",
+        "include_heading_path",
+        "include_frontmatter_in_embedding",
+        "preserve_code_blocks",
+        "removed_chunk_policy"
+      ],
+      "ingestion": [
+        "max_chunks_per_document_batch",
+        "max_chunks_per_transaction",
+        "max_file_size_bytes",
+        "max_sections",
+        "max_chunks",
+        "max_frontmatter_bytes"
+      ],
+      "privacy": [
+        "default_sensitivity",
+        "allow_llm_context_default",
+        "allow_retrieval_default",
+        "delete_by_scope_requires_confirm"
+      ],
+      "api": [
+        "enabled",
+        "host",
+        "port",
+        "local_api_token"
+      ],
+      "logging": [
+        "level"
+      ]
+    }
+  },
+  "api": {
+    "title": "Memory Store",
+    "version": "0.1.0",
+    "factory": "memory_store.api.main:create_app",
+    "auth": {
+      "mode": "optional static local token",
+      "header": "X-API-Token",
+      "comparison": "direct string equality"
+    },
+    "routes": [
+      {
+        "method": "POST",
+        "path": "/memories"
+      },
+      {
+        "method": "GET",
+        "path": "/memories/{memory_id}"
+      },
+      {
+        "method": "PATCH",
+        "path": "/memories/{memory_id}"
+      },
+      {
+        "method": "POST",
+        "path": "/memories/search"
+      },
+      {
+        "method": "POST",
+        "path": "/chunks/search"
+      },
+      {
+        "method": "GET",
+        "path": "/chunks/{chunk_id}"
+      },
+      {
+        "method": "GET",
+        "path": "/chunks/{chunk_id}/context"
+      },
+      {
+        "method": "POST",
+        "path": "/documents/ingest"
+      },
+      {
+        "method": "POST",
+        "path": "/documents/ingest-folder"
+      },
+      {
+        "method": "POST",
+        "path": "/memories/{memory_id}/feedback"
+      },
+      {
+        "method": "POST",
+        "path": "/memories/{memory_id}/forget"
+      },
+      {
+        "method": "POST",
+        "path": "/memories/export"
+      },
+      {
+        "method": "POST",
+        "path": "/memories/import"
+      },
+      {
+        "method": "POST",
+        "path": "/memories/delete-by-scope"
+      },
+      {
+        "method": "GET",
+        "path": "/health"
+      },
+      {
+        "method": "GET",
+        "path": "/stats"
+      }
+    ]
+  },
+  "database": {
+    "engine": "ArcadeDB Embedded",
+    "schema_version": 1,
+    "vertex_types": [
+      "MemoryRecord",
+      "SchemaVersion",
+      "MigrationRecord",
+      "RedactionAudit",
+      "ImportExportAudit"
+    ],
+    "edge_types": [
+      "SUPERSEDES",
+      "CONTRADICTS",
+      "DERIVED_FROM",
+      "RELATED_TO",
+      "SUPPORTS",
+      "MENTIONS"
+    ],
+    "full_text_index_fields": [
+      "title",
+      "summary",
+      "text",
+      "tags_text",
+      "source_path"
+    ],
+    "metadata_index_fields": [
+      "memory_id",
+      "memory_type",
+      "project_id",
+      "user_id",
+      "agent_id",
+      "status",
+      "created_at",
+      "stable_key",
+      "source_hash",
+      "chunk_id",
+      "section_index",
+      "section_chunk_index",
+      "document_chunk_index"
+    ],
+    "vector_index": {
+      "vertex": "MemoryRecord",
+      "field": "embedding",
+      "id_property": "memory_id",
+      "distance_function": "cosine"
+    },
+    "stored_model_identity_fields": [
+      "embedding_model",
+      "embedding_model_version",
+      "embedding_dim",
+      "embedding_created_at"
+    ]
+  },
+  "documented_workflows": [
+    "python_api",
+    "markdown_ingestion",
+    "hybrid_retrieval",
+    "rest_api",
+    "bulk_folder_ingestion",
+    "chunk_search_cli",
+    "eval_runner",
+    "local_flask_ui",
+    "local_validation"
+  ],
+  "baseline_environment": {
+    "python_version": "3.13.12",
+    "python_implementation": "CPython",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "system": "Windows",
+    "release": "11",
+    "machine": "AMD64",
+    "memory_store_version": "0.1.0",
+    "arcadedb_embedded_version": "26.7.2",
+    "fastembed_version": "0.8.0",
+    "fastapi_version": "0.140.0",
+    "pydantic_version": "2.13.4",
+    "uvicorn_version": "0.51.0",
+    "pytest_version": "9.1.1",
+    "coverage_version": "7.15.2"
+  },
+  "tests": {
+    "collected_total": 93,
+    "full_suite": {
+      "exit_code": 1,
+      "native_crash_signature": true
+    },
+    "by_file": {
+      "test_imports.py": {
+        "tests": 17,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      },
+      "test_phase1_config_models.py": {
+        "tests": 9,
+        "isolated_exit_code": 0,
+        "native_crash_signature": false
+      },
+      "test_phase10_rest_cli.py": {
+        "tests": 5,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      },
+      "test_phase11_evals_docs.py": {
+        "tests": 6,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      },
+      "test_phase2_arcade_persistence.py": {
+        "tests": 12,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      },
+      "test_phase3_service_api.py": {
+        "tests": 1,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      },
+      "test_phase4_embeddings.py": {
+        "tests": 1,
+        "isolated_exit_code": 0,
+        "native_crash_signature": false
+      },
+      "test_phase4_service_api.py": {
+        "tests": 5,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      },
+      "test_phase5_lifecycle.py": {
+        "tests": 3,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      },
+      "test_phase6_ingest_orchestration.py": {
+        "tests": 5,
+        "isolated_exit_code": 0,
+        "native_crash_signature": false
+      },
+      "test_phase6_markdown_ingestion.py": {
+        "tests": 16,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      },
+      "test_phase7_hybrid_retrieval.py": {
+        "tests": 7,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      },
+      "test_phase8_scoring_diagnostics.py": {
+        "tests": 3,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      },
+      "test_phase9_privacy_controls.py": {
+        "tests": 3,
+        "isolated_exit_code": 0,
+        "native_crash_signature": true
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+ByteBox provenance notice
+
+- ByteBox is a rebrand and production refactor of doktordub/mem-store.
+- Current repository lineage remains owner-controlled under doktordub.
+- This repository does not currently ship model binaries.
+- See docs/legal/provenance-and-license-review.md for the Phase 0 provenance record.

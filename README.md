@@ -1,8 +1,8 @@
-# Memory Store
+# ByteBox
 
-`memory-store` is a local-first Python memory system for AI agents. It keeps persistence inside ArcadeDB Embedded, exposes a Python-first API through `MemoryStore`, supports deterministic markdown ingestion, hybrid retrieval with explainable scoring, lifecycle transitions, privacy controls, and thin REST/CLI adapters over the same service layer.
+`bytebox` is a local-first Python memory system for AI agents. It keeps persistence inside ArcadeDB Embedded, exposes a Python-first API through `ByteBox`, supports deterministic markdown ingestion, hybrid retrieval with explainable scoring, lifecycle transitions, privacy controls, and thin REST/CLI adapters over the same service layer.
 
-See [docs/architecture.md](docs/architecture.md) for the system design and [docs/plan.md](docs/plan.md) for the phased build plan.
+See [docs/architecture.md](docs/architecture.md) for the current system design and [docs/ByteBoxPlan.md](docs/ByteBoxPlan.md) for the production refactor plan.
 
 ## What It Does
 
@@ -11,6 +11,8 @@ See [docs/architecture.md](docs/architecture.md) for the system design and [docs
 - Searches with full-text + vector retrieval + reciprocal rank fusion + optional reranking.
 - Preserves raw scores, normalized scores, and debug metadata on every result.
 - Applies lifecycle and privacy rules before results are returned to agents or adapters.
+
+In `production`, retrieval component scores and debug payloads default to off unless you explicitly set `retrieval.include_component_scores` and `retrieval.include_debug`.
 
 ## When To Use It
 
@@ -40,15 +42,32 @@ See [docs/architecture.md](docs/architecture.md) for the system design and [docs
 .\.venv\Scripts\python.exe -m pip install -e .[dev]
 ```
 
-If you want to start from the sample configuration, copy `config.example.yaml` to a local config file and adjust the database path, API token, or retrieval settings as needed.
+If you want to start from the sample configuration, copy `bytebox.example.yaml` to a local config file and adjust the database path, API token, or retrieval settings as needed.
+
+## Migration And Operations Guides
+
+- [docs/operations/installation-upgrade-guide.md](docs/operations/installation-upgrade-guide.md)
+- [docs/operations/offline-model-provisioning-guide.md](docs/operations/offline-model-provisioning-guide.md)
+- [docs/operations/ollama-llamacpp-guide.md](docs/operations/ollama-llamacpp-guide.md)
+- [docs/operations/tls-private-ca-mtls-guide.md](docs/operations/tls-private-ca-mtls-guide.md)
+- [docs/operations/backup-restore-disaster-recovery-guide.md](docs/operations/backup-restore-disaster-recovery-guide.md)
+- [docs/operations/health-metrics-logging-guide.md](docs/operations/health-metrics-logging-guide.md)
+- [docs/operations/performance-tuning-guide.md](docs/operations/performance-tuning-guide.md)
+- [docs/security/security-hardening-guide.md](docs/security/security-hardening-guide.md)
+- [docs/runbooks/incident-response-runbook.md](docs/runbooks/incident-response-runbook.md)
+- [docs/runbooks/rollback-runbook.md](docs/runbooks/rollback-runbook.md)
+- [docs/releases/release-candidate-soak-report.md](docs/releases/release-candidate-soak-report.md)
+- [docs/releases/go-no-go-checklist.md](docs/releases/go-no-go-checklist.md)
+- [docs/releases/bytebox-1.0.0-ga-release-notes.md](docs/releases/bytebox-1.0.0-ga-release-notes.md)
+- [docs/releases/ga-rollback-plan.md](docs/releases/ga-rollback-plan.md)
 
 ## Quickstart With The Python API
 
 ```python
-from memory_store import MemoryStore, Scope
-from memory_store.models import MemoryCreate, MemorySearchQuery, MemoryType
+from bytebox import ByteBox, Scope
+from bytebox.models import MemoryCreate, MemorySearchQuery, MemoryType
 
-store = MemoryStore.from_config(
+store = ByteBox.from_config(
 	database={"path": "./data/quickstart", "schema_version": 1},
 	reranker={"enabled": False},
 )
@@ -80,9 +99,9 @@ Runnable version: [examples/python_api_example.py](examples/python_api_example.p
 ```python
 from pathlib import Path
 
-from memory_store import MemoryStore, Scope
+from bytebox import ByteBox, Scope
 
-store = MemoryStore.from_config(database={"path": "./data/docs", "schema_version": 1})
+store = ByteBox.from_config(database={"path": "./data/docs", "schema_version": 1})
 
 try:
 	scope = Scope(project_id="docs")
@@ -113,6 +132,8 @@ Hybrid retrieval in V1 runs these stages in order:
 5. Optional reranking on a bounded candidate set.
 6. Final scoring with raw and normalized diagnostics preserved.
 
+Phase 8 moves the vector and full-text candidate selection into repository-level bounded queries, so search no longer materializes every record in a scope before scoring.
+
 ```python
 results = store.search(
 	MemorySearchQuery(scope=Scope(project_id="arcade"), text="service layer adapters", limit=5)
@@ -130,7 +151,7 @@ for result in results:
 To launch the FastAPI adapter with the app factory:
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn memory_store.api.main:create_app --factory --host 127.0.0.1 --port 8080
+.\.venv\Scripts\python.exe -m uvicorn bytebox.api.main:create_app --factory --host 127.0.0.1 --port 8080
 ```
 
 Example requests:
@@ -163,8 +184,8 @@ python .\examples\markdown_folder_ingest_cli.py --project-id "docs" --reranker-e
 {
   "ok": true,
   "message": "Processed 6 Markdown file(s).",
-  "folder": "E:\\KODE\\tools\\arcade\\docs",
-  "database_path": "E:\\KODE\\tools\\arcade\\data\\memory_store",
+  "folder": "E:\\KODE\\tools\\bytebox\\docs",
+  "database_path": "E:\\KODE\\tools\\bytebox\\data\\bytebox",
   "scope": {
     "user_id": "",
     "project_id": "docs",
@@ -204,7 +225,7 @@ python .\examples\chunk_search_cli.py --project-id "docs" --reranker-enabled  "p
   "ok": true,
   "message": "Found 10 chunk result(s).",
   "query": "plan",
-  "database_path": "E:\\KODE\\tools\\arcade\\data\\memory_store",
+  "database_path": "E:\\KODE\\tools\\bytebox\\data\\bytebox",
   "scope": {
     "user_id": "",
     "project_id": "docs",
@@ -220,24 +241,24 @@ python .\examples\chunk_search_cli.py --project-id "docs" --reranker-enabled  "p
     {
       "memory_id": "22bf652c-baa3-40e3-8e28-b6faf9fab074",
       "chunk_id": "680babfb58715b517603447a9b391efa2498316e8092450e90cb406422db067b",
-      "title": "Local-First Agent Memory Store \u2014 Phased Implementation Plan",
+      "title": "ByteBox Production Refactor Plan",
       "summary": "",
-      "text": "This plan converts `architecture.md` into an actionable build sequence for implementing the local-first agent memory store. It is organized into phases with:\n\n- clear implementation goals\n- concrete deliverables\n- test deliverables\n- acceptance gates\n- dependencies\n- references back to `architecture.md`\n\nThe plan assumes V1 must remain lightweight, local-first, deterministic, and testable. The implementation should prioritize correctness, safety, lifecycle clarity, and retrieval explainability before advanced optimization.\n\n---",
-      "snippet": "This plan converts `architecture.md` into an actionable build sequence for implementing the local-first agent memory store. It is organized into phases with:\n\n- clear implementation goals\n- concrete deliverables\n- test deliverables\n- acc...",
-      "source_path": "E:/KODE/tools/arcade/docs/plan.md",
+      "text": "This plan turns the current mem-store clone into an actionable ByteBox production refactor. It is organized into phases with clear implementation goals, concrete deliverables, test gates, and migration rules.\n\n---",
+      "snippet": "This plan turns the current mem-store clone into an actionable ByteBox production refactor. It is organized into phases with clear implementation goals, concrete deliverables, test gates, and migration rules.",
+      "source_path": "E:/KODE/tools/bytebox/docs/ByteBoxPlan.md",
       "source_hash": "aeaa32f5359d9d276edf0c53d1e00c269e8d5d8e7a1ad5ae9a72e59f24b95619",
       "heading_path": [
-        "Local-First Agent Memory Store \u2014 Phased Implementation Plan",
-        "0. Purpose"
+        "ByteBox Production Refactor Plan",
+        "1. Executive Summary"
       ],
-      "heading_path_label": "Local-First Agent Memory Store \u2014 Phased Implementation Plan / 0. Purpose",
+      "heading_path_label": "ByteBox Production Refactor Plan / 1. Executive Summary",
       "section_index": 1,
       "section_chunk_index": 0,
       "document_chunk_index": 1,
       "tags": [],
       "metadata": {
         "document_lifecycle": "source_controlled",
-        "heading_path_text": "Local-First Agent Memory Store \u2014 Phased Implementation Plan > 0. Purpose",
+        "heading_path_text": "ByteBox Production Refactor Plan > 1. Executive Summary",
         "approximate_token_count": 68,
         "section_chunk_index": 0,
         "chunking_max_tokens": 350,
@@ -262,15 +283,15 @@ python .\examples\chunk_search_cli.py --project-id "docs" --reranker-enabled  "p
 ## CLI Examples
 
 ```powershell
-memory-store init --config config.example.yaml
-memory-store ingest-file docs/architecture.md --project-id arcade
-memory-store ingest-folder docs/ --project-id arcade
-memory-store search "What reranking approach did we choose?" --project-id arcade
-memory-store search-chunks "hybrid retrieval" --project-id arcade
-memory-store chunk-context chunk-id --project-id arcade --before 1 --after 1
-memory-store export --user-id user-1 --out memories.json
-memory-store delete-by-scope --project-id arcade --dry-run
-memory-store eval evals/golden_queries.yaml
+.\.venv\Scripts\bytebox.exe init --config bytebox.example.yaml
+.\.venv\Scripts\bytebox.exe ingest-file docs/architecture.md --project-id arcade
+.\.venv\Scripts\bytebox.exe ingest-folder docs/ --project-id arcade
+.\.venv\Scripts\bytebox.exe search "What reranking approach did we choose?" --project-id arcade
+.\.venv\Scripts\bytebox.exe search-chunks "hybrid retrieval" --project-id arcade
+.\.venv\Scripts\bytebox.exe chunk-context chunk-id --project-id arcade --before 1 --after 1
+.\.venv\Scripts\bytebox.exe export --user-id user-1 --out memories.json
+.\.venv\Scripts\bytebox.exe delete-by-scope --project-id arcade --dry-run
+.\.venv\Scripts\bytebox.exe eval evals/golden_queries.yaml
 ```
 
 ## Configuration Reference
@@ -281,7 +302,7 @@ Configuration precedence is:
 defaults < config.yaml < environment variables < explicit code overrides
 ```
 
-Main sections in [config.example.yaml](config.example.yaml):
+Main sections in [bytebox.example.yaml](bytebox.example.yaml):
 
 - `database`: local path, schema version, and create-if-missing behavior.
 - `embeddings`: FastEmbed model, batch size, dimension policy.
@@ -293,11 +314,11 @@ Main sections in [config.example.yaml](config.example.yaml):
 - `api`: host, port, and optional local API token.
 - `logging`: current log level.
 
-Environment variables use `MEMORY_STORE_` with double underscores, for example:
+Environment variables use `BYTEBOX_` with double underscores, for example:
 
 ```powershell
-$env:MEMORY_STORE_DATABASE__PATH = "./data/dev-memory"
-$env:MEMORY_STORE_API__LOCAL_API_TOKEN = "dev-token"
+$env:BYTEBOX_DATABASE__PATH = "./data/dev-bytebox"
+$env:BYTEBOX_API__LOCAL_API_TOKEN = "dev-token"
 ```
 
 ## Lifecycle Examples
@@ -330,7 +351,7 @@ store.redact([r"secret-[0-9]+"], scope=Scope(project_id="arcade"))
 The eval runner loads a golden query fixture, executes searches, records latency and retrieval diagnostics, and writes both a JSON summary and a Markdown report.
 
 ```powershell
-memory-store eval evals/golden_queries.yaml
+.\.venv\Scripts\bytebox.exe eval evals/golden_queries.yaml
 ```
 
 Outputs:

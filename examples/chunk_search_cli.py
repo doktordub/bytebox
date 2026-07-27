@@ -1,4 +1,4 @@
-"""CLI utility to search document chunks from the local memory store."""
+"""CLI utility to search document chunks from the local ByteBox store."""
 
 from __future__ import annotations
 
@@ -7,17 +7,17 @@ import json
 from pathlib import Path
 from typing import Any
 
-from memory_store import MemoryStore, Scope
+from bytebox import ByteBox, Scope
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DATABASE_PATH = REPO_ROOT / "data" / "memory_store"
+DEFAULT_DATABASE_PATH = REPO_ROOT / "data" / "bytebox"
 SNIPPET_LENGTH = 240
 TITLE_LENGTH = 72
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Search the local memory-store database for document chunks."
+        description="Search the local ByteBox database for document chunks."
     )
     parser.add_argument("query", help="Search text to match against chunk content.")
     parser.add_argument(
@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
         "--config-path",
         type=Path,
         default=None,
-        help="Optional config file passed to MemoryStore.from_config().",
+        help="Optional config file passed to ByteBox.from_config().",
     )
     parser.add_argument("--user-id", default="", help="Scope user_id. Default: empty.")
     parser.add_argument(
@@ -71,7 +71,7 @@ def build_scope(args: argparse.Namespace) -> Scope:
 
 
 def build_store(args: argparse.Namespace) -> Any:
-    return MemoryStore.from_config(
+    return ByteBox.from_config(
         args.config_path,
         database={"path": args.database_path.expanduser(), "schema_version": 1},
         reranker={"enabled": args.reranker_enabled},

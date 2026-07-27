@@ -1,4 +1,4 @@
-"""Direct Python API example for the local-first memory store."""
+"""Direct Python API example for the local-first ByteBox package."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Protocol
 
-from memory_store import MemoryStore, Scope
-from memory_store.models import (
+from bytebox import ByteBox, Scope
+from bytebox.models import (
     MemoryCreate,
     MemoryFeedback,
     MemorySearchQuery,
@@ -19,8 +19,8 @@ class StoreFactory(Protocol):
     def __call__(self, config_path: str | Path | None = None, **overrides: Any) -> Any: ...
 
 
-def run_example(store_factory: StoreFactory = MemoryStore.from_config) -> None:
-    with TemporaryDirectory(prefix="memory-store-python-api-") as temp_dir:
+def run_example(store_factory: StoreFactory = ByteBox.from_config) -> None:
+    with TemporaryDirectory(prefix="bytebox-python-api-") as temp_dir:
         store = store_factory(
             database={"path": Path(temp_dir) / "arcade", "schema_version": 1},
             reranker={"enabled": False},

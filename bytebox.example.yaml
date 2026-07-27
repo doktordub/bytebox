@@ -1,0 +1,223 @@
+database:
+  path: "./data/bytebox"
+  create_if_missing: true
+  schema_version: 1
+  embedded_single_process: true
+
+embeddings:
+  provider: fastembed
+  model: "BAAI/bge-small-en-v1.5"
+  model_version: null
+  model_path: null
+  cache_dir: null
+  local_files_only: false
+  hf_hub_offline: false
+  threads: null
+  execution_providers: []
+  dim: 384
+  batch_size: 64
+  normalize: true
+  model_revision: null
+  model_digest: null
+  manifest_path: null
+  require_manifest: false
+  require_checksums: false
+  dimension_mismatch: error
+  remote:
+    base_url: null
+    timeout_connect_seconds: 5.0
+    timeout_read_seconds: 30.0
+    timeout_write_seconds: 30.0
+    timeout_pool_seconds: 5.0
+    max_connections: 20
+    max_keepalive_connections: 10
+    trust_env: false
+    follow_redirects: false
+    max_redirects: 1
+    max_retries: 2
+    retry_backoff_seconds: 0.25
+    circuit_breaker_failures: 3
+    circuit_breaker_reset_seconds: 5.0
+    max_concurrency: 4
+    allowed_hosts: []
+    allowed_cidrs: []
+    allow_loopback: true
+    allow_private_network: true
+    allow_link_local: false
+    allow_metadata_address: false
+    verify_tls: true
+    ca_bundle_path: null
+    client_cert_path: null
+    client_key_path: null
+    client_key_password: null
+
+  # Ollama embedding profile over local HTTP.
+  # provider: ollama
+  # model: "nomic-embed-text"
+  # dim: 768
+  # remote:
+  #   base_url: "http://127.0.0.1:11434"
+
+  # llama.cpp embedding profile over private CA HTTPS.
+  # provider: llamacpp
+  # model: "bge-small"
+  # dim: 384
+  # remote:
+  #   base_url: "https://llamacpp.internal:8443"
+  #   allowed_hosts: ["llamacpp.internal"]
+  #   verify_tls: true
+  #   ca_bundle_path: "./certs/private-ca.pem"
+
+reranker:
+  enabled: true
+  provider: fastembed
+  model: "Xenova/ms-marco-MiniLM-L-6-v2"
+  model_version: null
+  model_path: null
+  cache_dir: null
+  local_files_only: false
+  hf_hub_offline: false
+  threads: null
+  execution_providers: []
+  batch_size: 32
+  model_revision: null
+  model_digest: null
+  manifest_path: null
+  require_manifest: false
+  require_checksums: false
+  top_n: 60
+  llm_max_documents: 20
+  llm_max_document_chars: 2000
+  llm_max_output_tokens: 512
+  remote:
+    base_url: null
+    timeout_connect_seconds: 5.0
+    timeout_read_seconds: 30.0
+    timeout_write_seconds: 30.0
+    timeout_pool_seconds: 5.0
+    max_connections: 20
+    max_keepalive_connections: 10
+    trust_env: false
+    follow_redirects: false
+    max_redirects: 1
+    max_retries: 2
+    retry_backoff_seconds: 0.25
+    circuit_breaker_failures: 3
+    circuit_breaker_reset_seconds: 5.0
+    max_concurrency: 4
+    allowed_hosts: []
+    allowed_cidrs: []
+    allow_loopback: true
+    allow_private_network: true
+    allow_link_local: false
+    allow_metadata_address: false
+    verify_tls: true
+    ca_bundle_path: null
+    client_cert_path: null
+    client_key_path: null
+    client_key_password: null
+
+  # llama.cpp reranker over mTLS.
+  # provider: llamacpp
+  # model: "bge-reranker-base"
+  # remote:
+  #   base_url: "https://llamacpp.internal:9443"
+  #   allowed_hosts: ["llamacpp.internal"]
+  #   verify_tls: true
+  #   ca_bundle_path: "./certs/private-ca.pem"
+  #   client_cert_path: "./certs/bytebox-client.pem"
+  #   client_key_path: "./certs/bytebox-client-key.pem"
+
+  # Optional Ollama listwise reranker.
+  # provider: ollama_llm
+  # model: "llama3.2"
+  # llm_max_documents: 10
+  # llm_max_document_chars: 1200
+  # llm_max_output_tokens: 256
+  # remote:
+  #   base_url: "http://127.0.0.1:11434"
+
+retrieval:
+  vector_top_n: 30
+  fts_top_n: 30
+  rrf_k: 60
+  graph_expansion_enabled: true
+  graph_expansion_hops: 1
+  final_top_k: 10
+  include_component_scores: true
+  include_debug: true
+
+scoring:
+  weights:
+    reranker: 0.45
+    retrieval_fusion: 0.15
+    vector: 0.10
+    full_text: 0.08
+    temporal: 0.07
+    importance: 0.06
+    confidence: 0.04
+    graph: 0.03
+    user_rating: 0.02
+  temporal:
+    user_preference:
+      behavior: slow_decay
+      half_life_days: 365
+    project_fact:
+      behavior: moderate_decay
+      half_life_days: 180
+    task_state:
+      behavior: strong_recency
+      half_life_days: 30
+    conversation_summary:
+      behavior: moderate_decay
+      half_life_days: 60
+    observation:
+      behavior: strong_decay
+      half_life_days: 14
+    error_debug_note:
+      behavior: strong_decay
+      half_life_days: 21
+    decision:
+      behavior: no_decay_unless_superseded
+      half_life_days: null
+    document_chunk:
+      behavior: source_version_controls_freshness
+      half_life_days: null
+
+chunking:
+  strategy: markdown_section
+  # Approximate whitespace-token budget per chunk, not a strict tokenizer cap.
+  max_tokens: 350
+  # Approximate tail overlap copied into the next chunk.
+  overlap_tokens: 50
+  include_heading_path: true
+  include_frontmatter_in_embedding: true
+  # Fenced code blocks are preserved as single blocks even when they exceed the budget.
+  preserve_code_blocks: true
+  removed_chunk_policy: mark_removed
+
+ingestion:
+  # When null, document ingest reuses embeddings.batch_size for embed_batch() slices.
+  max_chunks_per_document_batch: null
+  # Bound the number of insert/update/remove operations per ArcadeDB transaction.
+  max_chunks_per_transaction: 128
+  max_file_size_bytes: 4194304
+  max_sections: 2000
+  max_chunks: 10000
+  max_frontmatter_bytes: 65536
+
+privacy:
+  default_sensitivity: internal
+  allow_llm_context_default: true
+  allow_retrieval_default: true
+  delete_by_scope_requires_confirm: true
+
+api:
+  enabled: false
+  host: "127.0.0.1"
+  port: 8080
+  workers: 1
+  local_api_token: null
+
+logging:
+  level: INFO

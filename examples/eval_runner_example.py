@@ -1,4 +1,4 @@
-"""Eval runner example using a deterministic in-memory store stub."""
+"""Eval runner example using a deterministic ByteBox store stub."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from evals.runner import run
-from memory_store.models import MemoryRecord, MemorySearchResult, Scope
+from bytebox.models import MemoryRecord, MemorySearchResult, Scope
 
 
 def _record() -> MemoryRecord:
@@ -38,7 +38,7 @@ class ExampleEvalStore:
 
 
 def main() -> None:
-    with TemporaryDirectory(prefix="memory-store-eval-") as temp_dir:
+    with TemporaryDirectory(prefix="bytebox-eval-") as temp_dir:
         root = Path(temp_dir)
         fixture = root / "golden_queries.yaml"
         fixture.write_text(

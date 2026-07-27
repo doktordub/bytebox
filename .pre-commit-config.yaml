@@ -1,0 +1,35 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.0
+    hooks:
+      - id: ruff-check
+        files: ^(src/bytebox/__init__\.py|src/bytebox/config\.py|src/bytebox/store\.py|src/bytebox/cli\.py|src/bytebox/api/main\.py|src/bytebox/ingest_security\.py|src/bytebox/observability/redaction\.py|src/memory_store/__init__\.py|scripts/run_coverage_matrix\.py|tests/test_phase1_config_models\.py|tests/test_imports\.py|tests/test_phase9_quality_security\.py)$
+      - id: ruff-format
+        files: ^(src/bytebox/__init__\.py|src/bytebox/config\.py|src/bytebox/store\.py|src/bytebox/cli\.py|src/bytebox/api/main\.py|src/bytebox/ingest_security\.py|src/bytebox/observability/redaction\.py|src/memory_store/__init__\.py|scripts/run_coverage_matrix\.py|tests/test_phase1_config_models\.py|tests/test_imports\.py|tests/test_phase9_quality_security\.py)$
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - --exclude-files
+          - ^(docs/|log/|tests/fixtures/)
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: python -m mypy src/bytebox/__init__.py src/bytebox/config.py src/bytebox/store.py src/bytebox/cli.py src/bytebox/api/main.py src/bytebox/ingest_security.py src/bytebox/observability/redaction.py src/memory_store/__init__.py scripts/run_coverage_matrix.py
+        language: system
+        pass_filenames: false

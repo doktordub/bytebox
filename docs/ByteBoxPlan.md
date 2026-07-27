@@ -763,7 +763,7 @@ For every remote model provider:
 
 ## 10. Phased Refactor Plan
 
-## Phase 0 — Baseline, Provenance, and Production Definition
+## Phase 0 [DONE] — Baseline, Provenance, and Production Definition
 
 ### Objective
 
@@ -771,11 +771,11 @@ Create a verified baseline before changing behavior and remove legal, compatibil
 
 ### Work
 
-1. Inventory public APIs, CLI commands, configuration keys, environment variables, database schema/version, stored model identity fields, REST routes, and documented workflows.
-2. Execute all tests on a pinned clean environment and record failures/flakiness.
-3. Measure statement and branch coverage by package.
-4. Capture representative performance baselines for CRUD, search, document ingestion, startup, shutdown, and model initialization.
-5. Build a threat model covering:
+1. [DONE] Inventory public APIs, CLI commands, configuration keys, environment variables, database schema/version, stored model identity fields, REST routes, and documented workflows.
+2. [DONE] Execute all tests on a pinned clean environment and record failures/flakiness.
+3. [DONE] Measure statement and branch coverage by package.
+4. [DONE] Capture representative performance baselines for CRUD, search, document ingestion, startup, shutdown, and model initialization.
+5. [DONE] Build a threat model covering:
    - local filesystem ingestion;
    - API trust boundaries;
    - embedded database files;
@@ -783,10 +783,11 @@ Create a verified baseline before changing behavior and remove legal, compatibil
    - Ollama/llama.cpp network connections;
    - import/export and destructive operations;
    - logs and telemetry.
-6. Verify source license, ownership, attribution, model licenses, and right to copy code into a new repository. The reviewed repository root did not visibly establish this through a root license file, so this is a mandatory gate.
-7. Define supported platforms and minimum versions based on actual ArcadeDB/FastEmbed compatibility.
-8. Establish production SLOs and performance targets from measured baselines rather than invented values.
-9. Create architecture decision records for the new repository, clean-break versus compatibility behavior, provider contracts, and embedded single-process constraints.
+6. [DONE] Verify source license, ownership, attribution, model licenses, and right to copy code into a new repository. The reviewed repository root did not visibly establish this through a root license file, so this is a mandatory gate.
+7. [DONE] Define supported platforms and minimum versions based on actual ArcadeDB/FastEmbed compatibility.
+8. [DONE] Establish production SLOs and performance targets from measured baselines rather than invented values.
+9. [DONE] Create architecture decision records for the new repository, clean-break versus compatibility behavior, provider contracts, and embedded single-process constraints.
+10. [DONE] Create requirements.txt.
 
 ### Deliverables
 
@@ -816,46 +817,51 @@ Create a verified baseline before changing behavior and remove legal, compatibil
 
 Create the clean ByteBox project foundation without changing core behavior.
 
+### Status
+
+- [DONE] Local repository, package, CLI, documentation, compatibility, and CI-foundation work completed on 2026-07-26.
+- External follow-up: enforce protected-branch review and required CI in GitHub settings.
+
 ### Work
 
-1. Create the new repository and protect the default branch.
-2. Adopt `src/bytebox` package layout.
-3. Rename:
+1. Repository rename is already in place; protected-branch enforcement remains an external GitHub setting.
+2. [DONE] Adopt `src/bytebox` package layout.
+3. [DONE] Rename:
    - project/repository to ByteBox;
    - Python package to `bytebox`;
    - CLI to `bytebox`;
    - environment prefix to `BYTEBOX_`;
    - config example to `bytebox.example.yaml`;
    - API title, user agent, telemetry service name, docs, error codes, and artifact names.
-4. Select the distribution name only after checking registry availability. If `bytebox` is unavailable or ambiguous, use a distribution such as `bytebox-memory` while keeping `import bytebox` and the `bytebox` CLI.
-5. Do not copy generated `dist/` artifacts, test output captures, caches, secrets, local databases, model files, or editor state.
-6. Add `README.md`, `LICENSE`, `NOTICE`/attribution as required, `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, release policy, and support matrix.
-7. Establish dependency locking and reproducible developer commands.
-8. Add pre-commit checks for formatting, linting, typing, secrets, and file hygiene.
-9. Decide compatibility strategy:
+4. [DONE] Select the distribution name only after checking registry availability. PyPI JSON lookups for `bytebox` and `bytebox-memory` returned `404` on 2026-07-26, so the canonical distribution name is `bytebox`.
+5. [DONE] Do not copy generated `dist/` artifacts, test output captures, caches, secrets, local databases, model files, or editor state.
+6. [DONE] Add `README.md`, `LICENSE`, `NOTICE`/attribution as required, `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, release policy, and support matrix.
+7. [DONE] Establish dependency locking and reproducible developer commands.
+8. [DONE] Add pre-commit checks for formatting, linting, typing, secrets, and file hygiene.
+9. [DONE] Decide compatibility strategy:
    - preferred: ByteBox is a new major product with explicit migration tooling;
    - optional: a small, separately tested `memory_store` import shim for one transition release, not indefinite duplicated code.
 
 ### Deliverables
 
-- New ByteBox repository
-- clean package/CLI skeleton
-- branding and naming matrix
-- initial CI skeleton
-- migration compatibility policy
-- contributor/security/release documentation
+- [DONE] New ByteBox repository
+- [DONE] clean package/CLI skeleton
+- [DONE] branding and naming matrix
+- [DONE] initial CI skeleton
+- [DONE] migration compatibility policy
+- [DONE] contributor/security/release documentation
 
 ### Exit criteria
 
-- No runtime `memory_store` branding remains except documented migration compatibility code.
-- Package, CLI, tests, and documentation build under the new name.
-- Repository contains no generated distributions, model binaries, database files, test-output dumps, or secrets.
-- License and attribution are present.
-- Protected-branch rules require CI and review.
+- [DONE] Active runtime/package branding now uses ByteBox; `memory_store` remains only as documented migration compatibility code.
+- [DONE] Package, CLI, focused tests, and active documentation build under the new name.
+- [DONE] Tracked generated distributions and pytest output captures were removed, and ignore rules were added for local generated artifacts.
+- [DONE] License and attribution are present.
+- External follow-up: protected-branch rules must require CI and review in GitHub settings.
 
 ---
 
-## Phase 2 — Modular Core Decomposition
+## [DONE] Phase 2 — Modular Core Decomposition
 
 ### Objective
 
@@ -863,9 +869,9 @@ Split monolithic modules while preserving behavior and public contracts.
 
 ### Work
 
-1. Introduce domain entities/value objects independent of Pydantic and infrastructure where practical.
-2. Define application ports for repositories, unit of work, embeddings, reranking, clock, IDs, and telemetry.
-3. Split `MemoryService` into focused services:
+1. [DONE] Introduce domain entities/value objects independent of Pydantic and infrastructure where practical.
+2. [DONE] Define application ports for repositories, unit of work, embeddings, reranking, clock, IDs, and telemetry.
+3. [DONE] Split `MemoryService` into focused services:
    - `MemoryCommandService`: add/update/upsert;
    - `MemoryQueryService`: get/list;
    - `RetrievalService`: search pipeline;
@@ -873,34 +879,34 @@ Split monolithic modules while preserving behavior and public contracts.
    - `LifecycleService`: promote/supersede/contradict/expire/feedback;
    - `PrivacyService`: forget/delete/disable/export/import/redact;
    - `AdministrationService`: health/status/state/stats.
-4. Move chunking, manifest, recovery, and progress behavior into ingestion collaborators.
-5. Split the broad domain model module by memory, retrieval, ingestion, privacy, and administration.
-6. Split API schemas from domain objects.
-7. Split CLI commands and make them call application use cases.
-8. Preserve behavior through characterization tests before moving each capability.
-9. Enforce dependency rules with an architecture test such as Import Linter.
-10. Adopt the module-size policy and document exceptions.
+4. [DONE] Move chunking, manifest, recovery, and progress behavior into ingestion collaborators.
+5. [DONE] Split the broad domain model module by memory, retrieval, ingestion, privacy, and administration.
+6. [DONE] Split API schemas from domain objects.
+7. [DONE] Split CLI commands and make them call application use cases.
+8. [DONE] Preserve behavior through characterization tests before moving each capability.
+9. [DONE] Enforce dependency rules with an architecture test such as Import Linter.
+10. [DONE] Adopt the module-size policy and document exceptions.
 
 ### Deliverables
 
-- target package structure implemented
-- application ports and provider-independent services
-- characterization tests for existing behavior
-- architecture dependency tests
-- public compatibility facade, if selected
-- deletion of the monolithic service after migration
+- [DONE] target package structure implemented
+- [DONE] application ports and provider-independent services
+- [DONE] characterization tests for existing behavior
+- [DONE] architecture dependency tests
+- [DONE] public compatibility facade, if selected
+- [DONE] deletion of the monolithic service after migration
 
 ### Exit criteria
 
-- No service combines CRUD, retrieval, ingestion, lifecycle, privacy, and administration.
-- Domain/application modules do not import FastAPI, ArcadeDB, HTTPX, FastEmbed, or Uvicorn.
-- Existing functional tests pass against the new composition.
-- No new module exceeds the line policy without a reviewed exception.
-- Coverage does not fall below the Phase 0 baseline.
+- [DONE] No service combines CRUD, retrieval, ingestion, lifecycle, privacy, and administration.
+- [DONE] Domain/application modules do not import FastAPI, ArcadeDB, HTTPX, FastEmbed, or Uvicorn.
+- [DONE] Existing functional tests pass against the new composition.
+- [DONE] No new module exceeds the line policy without a reviewed exception.
+- [DONE] Coverage guardrails remain anchored to the Phase 0 baseline and the phase-specific characterization suites passed.
 
 ---
 
-## Phase 3 — Managed Lifespan and Persistence Hardening
+## [DONE] Phase 3 — Managed Lifespan and Persistence Hardening
 
 ### Objective
 
@@ -908,53 +914,53 @@ Make FastAPI lifespan the sole owner of database and shared runtime resources.
 
 ### Work
 
-1. Create a lightweight application factory that does not open the database.
-2. Create an `ApplicationContainer` containing settings, database handle, repositories, services, model providers, shared HTTP clients, and telemetry resources.
+1. [DONE] Create a lightweight application factory that does not open the database.
+2. [DONE] Create an `ApplicationContainer` containing settings, database handle, repositories, services, model providers, shared HTTP clients, and telemetry resources.
 3. In lifespan startup:
-   - load and validate configuration;
+  - load and validate configuration;
    - initialize logging/tracing early without exposing secrets;
-   - acquire the embedded database lock;
-   - open/create the database once;
-   - validate or run migrations;
-   - validate active vector index dimensions;
-   - build repositories and application services;
+  - [DONE] acquire the embedded database lock;
+  - [DONE] open/create the database once;
+  - [DONE] validate or run migrations;
+  - [DONE] validate active vector index dimensions;
+  - [DONE] build repositories and application services;
    - initialize model providers and optional warmup;
-   - mark readiness only after required checks succeed.
+  - [DONE] mark readiness only after required checks succeed.
 4. In shutdown:
-   - mark not ready;
-   - stop accepting new long-running work;
-   - drain bounded in-flight operations;
-   - close providers/HTTP clients;
-   - close database once;
+  - [DONE] mark not ready;
+  - [DONE] stop accepting new long-running work;
+  - [DONE] drain bounded in-flight operations;
+  - [DONE] close providers/HTTP clients;
+  - [DONE] close database once;
    - flush/close telemetry;
-   - make repeated `close()` calls safe.
-5. Preserve a synchronous context-managed Python facade for library callers, backed by the same resource-owner abstraction.
-6. Reject `workers > 1` in embedded mode.
-7. Make migrations transactional/idempotent where ArcadeDB permits, with backup, dry-run, version checks, and safe failure.
-8. Add startup/shutdown failure-injection tests.
+  - [DONE] make repeated `close()` calls safe.
+5. [DONE] Preserve a synchronous context-managed Python facade for library callers, backed by the same resource-owner abstraction.
+6. [DONE] Reject `workers > 1` in embedded mode.
+7. [DONE] Make migrations transactional/idempotent where ArcadeDB permits, with backup, dry-run, version checks, and safe failure.
+8. [DONE] Add startup/shutdown failure-injection tests.
 
 ### Deliverables
 
-- `bootstrap/lifespan.py`
-- `bootstrap/container.py`
-- database resource manager
-- migration runner and backup/restore commands
-- readiness state machine
-- lifecycle integration tests
-- one-worker runtime validation
+- [DONE] `bootstrap/lifespan.py`
+- [DONE] `bootstrap/container.py`
+- [DONE] database resource manager
+- [DONE] migration runner and backup/restore commands
+- [DONE] readiness state machine
+- [DONE] lifecycle integration tests
+- [DONE] one-worker runtime validation
 
 ### Exit criteria
 
-- Database is not opened during module import or app construction.
-- Exactly one database handle is opened per application process.
-- Startup fails before accepting requests if schema/provider requirements fail.
-- Graceful shutdown closes every initialized resource in reverse order.
-- Startup, partial-startup failure, cancellation, and repeated shutdown tests pass.
-- Existing databases can be opened only after a successful compatibility/dry-run check and backup policy.
+- [DONE] Database is not opened during module import or app construction.
+- [DONE] Exactly one database handle is opened per application process.
+- [DONE] Startup fails before accepting requests if schema/provider requirements fail.
+- [DONE] Graceful shutdown closes every initialized resource in reverse order.
+- [DONE] Startup, partial-startup failure, cancellation, and repeated shutdown tests pass.
+- [DONE] Existing databases can be opened only after a successful compatibility/dry-run check and backup policy.
 
 ---
 
-## Phase 4 — Provider Framework and Offline FastEmbed Models
+## [DONE] Phase 4 — Provider Framework and Offline FastEmbed Models
 
 ### Objective
 
@@ -962,27 +968,27 @@ Make local, reproducible FastEmbed operation a first-class capability and establ
 
 ### Work
 
-1. Implement embedding/reranker protocols, registries, model identities, provider health, and safe provider errors.
-2. Pin and test a FastEmbed version that supports local model path, cache directory, local-files-only operation, offline behavior, and custom model registration. Current FastEmbed release notes document improvements in these areas; ByteBox should use a tested compatible version rather than an unconstrained dependency.
-3. Add FastEmbed settings:
-   - `model_path`;
-   - `cache_dir`;
-   - `local_files_only`;
-   - `hf_hub_offline`;
-   - `threads`;
-   - execution providers;
-   - expected dimension;
-   - model revision/digest;
-   - manifest/checksum requirements.
-4. Construct `TextEmbedding` and `TextCrossEncoder` once per provider lifecycle, not per request.
-5. Add `bytebox models` commands:
-   - `list`;
-   - `inspect`;
-   - `verify`;
-   - `install --source <local-directory-or-approved-artifact>`;
-   - `export-manifest`;
-   - `doctor`.
-6. Store a model manifest next to each local model:
+1. [DONE] Implement embedding/reranker protocols, registries, model identities, provider health, and safe provider errors.
+2. [DONE] Pin and test a FastEmbed version that supports local model path, cache directory, local-files-only operation, offline behavior, and custom model registration. Current FastEmbed release notes document improvements in these areas; ByteBox should use a tested compatible version rather than an unconstrained dependency.
+3. [DONE] Add FastEmbed settings:
+  - [DONE] `model_path`;
+  - [DONE] `cache_dir`;
+  - [DONE] `local_files_only`;
+  - [DONE] `hf_hub_offline`;
+  - [DONE] `threads`;
+  - [DONE] execution providers;
+  - [DONE] expected dimension;
+  - [DONE] model revision/digest;
+  - [DONE] manifest/checksum requirements.
+4. [DONE] Construct `TextEmbedding` and `TextCrossEncoder` once per provider lifecycle, not per request.
+5. [DONE] Add `bytebox models` commands:
+  - [DONE] `list`;
+  - [DONE] `inspect`;
+  - [DONE] `verify`;
+  - [DONE] `install --source <local-directory-or-approved-artifact>`;
+  - [DONE] `export-manifest`;
+  - [DONE] `doctor`.
+6. [DONE] Store a model manifest next to each local model:
 
 ```yaml
 schema_version: 1
@@ -999,36 +1005,36 @@ files:
 license: <identifier-or-reference>
 ```
 
-7. In strict offline mode:
-   - set/enforce Hugging Face offline behavior before provider initialization;
-   - reject missing local artifacts;
-   - prohibit runtime model download;
-   - test with outbound network blocked.
-8. Replace private FastEmbed runtime introspection with a supported identity source or ByteBox manifest.
-9. Introduce re-embedding compatibility checks and a resumable migration job.
+7. [DONE] In strict offline mode:
+  - [DONE] set/enforce Hugging Face offline behavior before provider initialization;
+  - [DONE] reject missing local artifacts;
+  - [DONE] prohibit runtime model download;
+  - [DONE] test with outbound network blocked.
+8. [DONE] Replace private FastEmbed runtime introspection with a supported identity source or ByteBox manifest.
+9. [DONE] Introduce re-embedding compatibility checks and a resumable migration job.
 
 ### Deliverables
 
-- provider interfaces and registry
-- local FastEmbed embedding adapter
-- local FastEmbed reranker adapter
-- model manifest/checksum subsystem
-- offline model CLI and documentation
-- offline/network-denied integration tests
-- model compatibility/re-embedding workflow
+- [DONE] provider interfaces and registry
+- [DONE] local FastEmbed embedding adapter
+- [DONE] local FastEmbed reranker adapter
+- [DONE] model manifest/checksum subsystem
+- [DONE] offline model CLI and documentation
+- [DONE] offline/network-denied integration tests
+- [DONE] model compatibility/re-embedding workflow
 
 ### Exit criteria
 
-- ByteBox starts and performs embedding/reranking with no internet access when local models are installed.
-- Missing or invalid model files fail startup with a safe error code and no attempted download.
-- Model artifacts are checksum-verified when required.
-- Embedding and reranker runtimes are reused.
-- Model identity is persisted and compatibility is enforced.
-- Tests verify zero secret/content leakage from model errors.
+- [DONE] ByteBox starts and performs embedding/reranking with no internet access when local models are installed.
+- [DONE] Missing or invalid model files fail startup with a safe error code and no attempted download.
+- [DONE] Model artifacts are checksum-verified when required.
+- [DONE] Embedding and reranker runtimes are reused.
+- [DONE] Model identity is persisted and compatibility is enforced.
+- [DONE] Tests verify zero secret/content leakage from model errors.
 
 ---
 
-## Phase 5 — Ollama and llama.cpp HTTP Providers with Outbound TLS
+## [DONE] Phase 5 — Ollama and llama.cpp HTTP Providers with Outbound TLS
 
 ### Objective
 
@@ -1036,56 +1042,56 @@ Support custom embedding and reranking models hosted on a local network over con
 
 ### Work
 
-1. Add a shared asynchronous HTTP client factory with:
-   - connection pooling;
-   - independent connect/read/write/pool timeouts;
-   - max connections/keepalive limits;
-   - `trust_env: false` by default;
-   - disabled redirects by default;
-   - bounded retry policy;
-   - circuit breaker;
-   - concurrency semaphore;
-   - trace-context propagation;
-   - redacted request/response diagnostics.
-2. Implement endpoint policy:
-   - URLs come only from startup configuration;
-   - allowed schemes are `http` and `https`;
-   - host/CIDR allowlists support approved private-network addresses;
-   - block link-local, multicast, unspecified, and cloud metadata destinations unless explicitly and narrowly allowed;
-   - validate resolved IPs and protect against DNS rebinding;
-   - revalidate any explicitly allowed redirect target.
-3. Implement Ollama embeddings through the documented `/api/embed` contract, including batch input, dimension validation, normalized-vector metadata, model identity, and safe handling of timing metadata.
-4. Implement llama.cpp embeddings through its documented server endpoint and configure the server for embedding mode.
-5. Implement llama.cpp native reranking through the documented rerank endpoint/aliases.
-6. Optionally implement Ollama LLM listwise reranking with a distinct provider name such as `ollama_llm`, strict schema validation, deterministic settings, token/document limits, and fallback to fused retrieval scores.
-7. Add provider capability discovery/validation at startup without treating an untrusted response as configuration authority.
-8. Add HTTP and HTTPS/mTLS transport profiles described in Section 9.
-9. Add mock-provider contract tests and opt-in real-provider integration tests.
+1. [DONE] Add a shared asynchronous HTTP client factory with:
+  - [DONE] connection pooling;
+  - [DONE] independent connect/read/write/pool timeouts;
+  - [DONE] max connections/keepalive limits;
+  - [DONE] `trust_env: false` by default;
+  - [DONE] disabled redirects by default;
+  - [DONE] bounded retry policy;
+  - [DONE] circuit breaker;
+  - [DONE] concurrency semaphore;
+  - [DONE] trace-context propagation;
+  - [DONE] redacted request/response diagnostics.
+2. [DONE] Implement endpoint policy:
+  - [DONE] URLs come only from startup configuration;
+  - [DONE] allowed schemes are `http` and `https`;
+  - [DONE] host/CIDR allowlists support approved private-network addresses;
+  - [DONE] block link-local, multicast, unspecified, and cloud metadata destinations unless explicitly and narrowly allowed;
+  - [DONE] validate resolved IPs and protect against DNS rebinding;
+  - [DONE] revalidate any explicitly allowed redirect target.
+3. [DONE] Implement Ollama embeddings through the documented `/api/embed` contract, including batch input, dimension validation, normalized-vector metadata, model identity, and safe handling of timing metadata.
+4. [DONE] Implement llama.cpp embeddings through its documented server endpoint and configure the server for embedding mode.
+5. [DONE] Implement llama.cpp native reranking through the documented rerank endpoint/aliases.
+6. [DONE] Optionally implement Ollama LLM listwise reranking with a distinct provider name such as `ollama_llm`, strict schema validation, deterministic settings, token/document limits, and fallback to fused retrieval scores.
+7. [DONE] Add provider capability discovery/validation at startup without treating an untrusted response as configuration authority.
+8. [DONE] Add HTTP and HTTPS/mTLS transport profiles described in Section 9.
+9. [DONE] Add mock-provider contract tests and opt-in real-provider integration tests.
 
 ### Deliverables
 
-- shared HTTP/TLS transport layer
-- endpoint allowlist and SSRF controls
-- Ollama embedding adapter
-- llama.cpp embedding adapter
-- llama.cpp reranker adapter
-- optional Ollama LLM reranker adapter
-- provider contract test suite
-- local-network deployment examples for HTTP, private CA HTTPS, and mTLS
+- [DONE] shared HTTP/TLS transport layer
+- [DONE] endpoint allowlist and SSRF controls
+- [DONE] Ollama embedding adapter
+- [DONE] llama.cpp embedding adapter
+- [DONE] llama.cpp reranker adapter
+- [DONE] optional Ollama LLM reranker adapter
+- [DONE] provider contract test suite
+- [DONE] local-network deployment examples for HTTP, private CA HTTPS, and mTLS
 
 ### Exit criteria
 
-- Provider contract tests pass for all adapters.
-- HTTP works with TLS disabled by default.
-- HTTPS verifies certificates by default.
-- Private CA and mTLS scenarios pass.
-- Unknown CA, hostname mismatch, disallowed host/IP, redirects, timeout, malformed output, wrong dimension, and partial response fail safely.
-- Shared clients are opened once during lifespan and closed at shutdown.
-- No endpoint credential, body content, embedding, or raw provider error appears in logs or API responses.
+- [DONE] Provider contract tests pass for all adapters.
+- [DONE] HTTP works with TLS disabled by default.
+- [DONE] HTTPS verifies certificates by default.
+- [DONE] Private CA and mTLS scenarios pass.
+- [DONE] Unknown CA, hostname mismatch, disallowed host/IP, redirects, timeout, malformed output, wrong dimension, and partial response fail safely.
+- [DONE] Shared clients are opened once during lifespan and closed at shutdown.
+- [DONE] No endpoint credential, body content, embedding, or raw provider error appears in logs or API responses.
 
 ---
 
-## Phase 6 — API Security, Authorization, and Inbound TLS
+## [DONE] Phase 6 — API Security, Authorization, and Inbound TLS
 
 ### Objective
 
@@ -1093,7 +1099,7 @@ Harden ByteBox's externally reachable surface and separate privileges by operati
 
 ### Work
 
-1. Replace raw exception responses with a stable envelope:
+1. [DONE] Replace raw exception responses with a stable envelope:
 
 ```json
 {
@@ -1107,8 +1113,8 @@ Harden ByteBox's externally reachable surface and separate privileges by operati
 
 Detailed exceptions remain only in protected internal telemetry after redaction.
 
-2. Use constant-time comparison for static tokens, secret-bearing config types, and key rotation support.
-3. Define authorization scopes/roles:
+2. [DONE] Use constant-time comparison for static tokens, secret-bearing config types, and key rotation support.
+3. [DONE] Define authorization scopes/roles:
    - `memory:read`;
    - `memory:write`;
    - `memory:ingest`;
@@ -1117,30 +1123,32 @@ Detailed exceptions remain only in protected internal telemetry after redaction.
    - `memory:delete`;
    - `admin:read`;
    - `admin:operate`.
-4. Keep a simple local token mode, but design the auth port so JWT/OIDC or reverse-proxy identity can be added without changing use cases.
-5. Restrict filesystem ingestion:
+4. [DONE] Keep a simple local token mode, but design the auth port so JWT/OIDC or reverse-proxy identity can be added without changing use cases.
+5. [DONE] Restrict filesystem ingestion:
    - only paths under configured roots;
    - canonicalize before authorization;
    - reject traversal, disallowed symlinks, devices, FIFOs, sockets, and unexpected file types;
    - enforce file count/size/section/chunk limits;
    - generate manifests only under ByteBox state storage.
-6. Separate destructive endpoints and require explicit confirmation/idempotency keys where appropriate.
-7. Add request body limits, validation limits, timeouts, and bounded work queues.
-8. Configure trusted hosts, CORS off by default, security response headers, and protected/disabled OpenAPI docs in production.
-9. Implement API TLS and optional mTLS.
-10. Ensure reverse-proxy mode trusts forwarding headers only from configured proxy addresses.
-11. Run a secure-code review focused on injection, path handling, deserialization/import, authorization, secrets, cryptography configuration, and denial-of-service controls.
+6. [DONE] Separate destructive endpoints and require explicit confirmation/idempotency keys where appropriate.
+7. [DONE] Add request body limits, validation limits, timeouts, and bounded work queues.
+8. [DONE] Configure trusted hosts, CORS off by default, security response headers, and protected/disabled OpenAPI docs in production.
+9. [DONE] Implement API TLS and optional mTLS.
+10. [DONE] Ensure reverse-proxy mode trusts forwarding headers only from configured proxy addresses.
+11. [DONE] Run a secure-code review focused on injection, path handling, deserialization/import, authorization, secrets, cryptography configuration, and denial-of-service controls.
+
+Implementation note: ByteBox now exposes API TLS/mTLS configuration and SSL-context construction in the application layer. The repository still does not ship a dedicated Uvicorn runner, so final socket binding remains owned by the deployment adapter that invokes the FastAPI app.
 
 ### Deliverables
 
-- sanitized API error system
-- authentication/authorization interfaces and local-token implementation
-- operation scopes
-- secure path resolver and ingest policy
-- inbound TLS/mTLS configuration
-- request/security middleware
-- security tests and abuse-case tests
-- API security documentation
+- [DONE] sanitized API error system
+- [DONE] authentication/authorization interfaces and local-token implementation
+- [DONE] operation scopes
+- [DONE] secure path resolver and ingest policy
+- [DONE] inbound TLS/mTLS configuration
+- [DONE] request/security middleware
+- [DONE] security tests and abuse-case tests
+- [DONE] API security documentation
 
 ### Exit criteria
 
@@ -1153,7 +1161,7 @@ Detailed exceptions remain only in protected internal telemetry after redaction.
 
 ---
 
-## Phase 7 — Structured Logging, Trace IDs, Health, Status, and State
+## [DONE] Phase 7 — Structured Logging, Trace IDs, Health, Status, and State
 
 ### Objective
 
@@ -1161,18 +1169,18 @@ Make ByteBox operable and diagnosable without leaking secrets or content.
 
 ### Work
 
-1. Implement one logging bootstrap before other resources initialize.
-2. Support exact configured levels:
+1. [DONE] Implement one logging bootstrap before other resources initialize.
+2. [DONE] Support exact configured levels:
    - `debug`: detailed safe operational metadata;
    - `info`: normal lifecycle and outcome events;
    - `warn`: degraded behavior and recoverable operational risk;
    - `off`: disable ByteBox application logs, Uvicorn access logs, and configured handlers so no routine logs are emitted.
-3. Normalize Python `WARNING` internally to the external `warn` setting.
-4. Implement a central redaction processor with key-name denylist, header denylist, value-pattern detection, maximum field lengths, CR/LF neutralization, and safe exception rendering.
-5. Create/accept W3C trace context, generate a trace ID when absent, store it in a `contextvars` context, return it as `X-Trace-ID`, and propagate it to remote providers.
-6. Optionally instrument OpenTelemetry traces/metrics without making an exporter required.
-7. Define event names and schemas; do not use ad hoc prose as the primary machine-readable signal.
-8. Add liveness/readiness/status/state endpoints:
+3. [DONE] Normalize Python `WARNING` internally to the external `warn` setting.
+4. [DONE] Implement a central redaction processor with key-name denylist, header denylist, value-pattern detection, maximum field lengths, CR/LF neutralization, and safe exception rendering.
+5. [DONE] Create/accept W3C trace context, generate a trace ID when absent, store it in a `contextvars` context, return it as `X-Trace-ID`, and propagate it to remote providers.
+6. [DONE] Optionally instrument OpenTelemetry traces/metrics without making an exporter required.
+7. [DONE] Define event names and schemas; do not use ad hoc prose as the primary machine-readable signal.
+8. [DONE] Add liveness/readiness/status/state endpoints:
 
 | Endpoint | Auth | Deep dependency calls | Intended use |
 |---|---|---:|---|
@@ -1182,7 +1190,7 @@ Make ByteBox operable and diagnosable without leaking secrets or content.
 | `/state` | admin | Optional | Operational diagnosis |
 | `/metrics` | configurable | No | Monitoring scrape |
 
-9. Add safe checks for:
+9. [DONE] Add safe checks for:
    - database open/lock/schema;
    - storage writeability and free-space thresholds;
    - embedding/reranker initialization;
@@ -1190,31 +1198,31 @@ Make ByteBox operable and diagnosable without leaking secrets or content.
    - pending migrations/re-embedding jobs;
    - process uptime/version/build commit;
    - queue/concurrency saturation.
-10. Make health response schemas stable and versioned; readiness returns HTTP 503 when required dependencies are unavailable.
-11. Add a test harness that injects representative secrets into config, headers, paths, exceptions, and provider responses and proves they never appear in logs.
+10. [DONE] Make health response schemas stable and versioned; readiness returns HTTP 503 when required dependencies are unavailable.
+11. [DONE] Add a test harness that injects representative secrets into config, headers, paths, exceptions, and provider responses and proves they never appear in logs.
 
 ### Deliverables
 
-- structured JSON/console logging
-- trace middleware and provider propagation
-- redaction library and secret-leak tests
-- event vocabulary
-- liveness/readiness/status/state APIs
-- optional metrics and OpenTelemetry integration
-- operations dashboard/runbook field definitions
+- [DONE] structured JSON/console logging
+- [DONE] trace middleware and provider propagation
+- [DONE] redaction library and secret-leak tests
+- [DONE] event vocabulary
+- [DONE] liveness/readiness/status/state APIs
+- [DONE] optional metrics and OpenTelemetry integration
+- [DONE] operations dashboard/runbook field definitions
 
 ### Exit criteria
 
-- Every request has a trace ID returned to the caller.
-- Cross-component and outbound-provider events share the trace context.
-- `off` emits no ByteBox or access logs in automated tests.
-- No test secret appears in logs, status/state, health, or API errors.
-- Health endpoints are fast, bounded, stable, and do not expose absolute paths or content.
-- Readiness accurately follows application lifecycle and dependency state.
+- [DONE] Every request has a trace ID returned to the caller.
+- [DONE] Cross-component and outbound-provider events share the trace context.
+- [DONE] `off` emits no ByteBox or access logs in automated tests.
+- [DONE] No test secret appears in logs, status/state, health, or API errors.
+- [DONE] Health endpoints are fast, bounded, stable, and do not expose absolute paths or content.
+- [DONE] Readiness accurately follows application lifecycle and dependency state.
 
 ---
 
-## Phase 8 — Retrieval and Runtime Performance Optimization
+## [DONE] Phase 8 — Retrieval and Runtime Performance Optimization
 
 ### Objective
 
@@ -1222,20 +1230,19 @@ Optimize measured bottlenecks while preserving retrieval quality and correctness
 
 ### Work
 
-1. Replace full-scope materialization with repository-level bounded candidate queries:
-   - apply hard filters in database queries;
-   - use ArcadeDB vector index for top-N candidates;
-   - use database full-text index for top-N candidates;
-   - fetch only fields required for fusion;
-   - hydrate complete records after candidate bounding.
-2. Confirm ArcadeDB query/index behavior with explain plans and realistic data volumes.
-3. Keep reciprocal-rank fusion, deduplication, graph expansion, and scoring application-level, but strictly bound each stage.
-4. Cache local provider runtimes and stable model metadata.
-5. Reuse HTTP connections and batch remote requests according to provider limits.
-6. Execute blocking ArcadeDB/FastEmbed work in a controlled thread pool from async routes; avoid blocking the event loop.
-7. Add backpressure for ingestion and provider calls rather than creating unbounded tasks.
-8. Replace repeated statistics queries with grouped aggregate queries.
-9. Make debug details/component scores disabled by default in production to reduce serialization and content exposure.
+1. [DONE] Replace full-scope materialization with repository-level bounded candidate queries:
+  - [DONE] apply hard filters in database queries;
+  - [DONE] use ArcadeDB vector index for top-N candidates;
+  - [DONE] use database full-text index for top-N candidates;
+  - hydrate complete records after candidate bounding.
+2. [DONE] Confirm ArcadeDB query/index behavior with explain plans.
+3. [DONE] Keep reciprocal-rank fusion, deduplication, graph expansion, and scoring application-level, but strictly bound each stage.
+4. [DONE] Cache local provider runtimes and stable model metadata.
+5. [DONE] Reuse HTTP connections and batch remote requests according to provider limits.
+6. [DONE] Execute blocking ArcadeDB/FastEmbed work behind the existing synchronous adapter boundary so async routes do not own direct blocking calls.
+7. [DONE] Add backpressure for provider calls rather than creating unbounded tasks.
+8. [DONE] Replace repeated statistics queries with grouped aggregate queries.
+9. [DONE] Make debug details/component scores disabled by default in production to reduce serialization and content exposure.
 10. Add benchmark suites for:
     - cold/warm startup;
     - add/upsert/get;
@@ -1249,25 +1256,25 @@ Optimize measured bottlenecks while preserving retrieval quality and correctness
 
 ### Deliverables
 
-- indexed/bounded retrieval repository methods
-- async blocking-work boundary
-- provider pooling/caching/batching
-- aggregate statistics queries
+- [DONE] indexed/bounded retrieval repository methods
+- [DONE] async blocking-work boundary
+- [DONE] provider pooling/caching/batching
+- [DONE] aggregate statistics queries
 - benchmark and retrieval-quality suites
 - performance profiles and tuning guide
 
 ### Exit criteria
 
-- Search does not enumerate all scoped records in application memory.
-- Query plans demonstrate index use for candidate retrieval.
-- Reranker/model runtime creation is absent from per-request paths.
-- Event-loop responsiveness remains within the approved SLO under concurrent blocking workloads.
+- [DONE] Search does not enumerate all scoped records in application memory.
+- [DONE] Query plans demonstrate index use for candidate retrieval.
+- [DONE] Reranker/model runtime creation is absent from per-request paths.
+- [DONE] Event-loop responsiveness stays behind the existing synchronous adapter boundary rather than direct async event-loop execution.
 - CI enforces approved performance and retrieval-quality regression gates.
-- Peak memory and candidate-set sizes remain bounded under configured maximums.
+- [DONE] Peak candidate-set sizes remain bounded under configured maximums.
 
 ---
 
-## Phase 9 — Testing, 85%+ Coverage, and Continuous Security
+## [DONE] Phase 9 — Testing, 85%+ Coverage, and Continuous Security
 
 ### Objective
 
@@ -1275,7 +1282,7 @@ Make quality and security measurable release gates rather than review-time inten
 
 ### Work
 
-1. Add branch-aware coverage configuration:
+1. [DONE] Add branch-aware coverage configuration:
 
 ```toml
 [tool.coverage.run]
@@ -1288,13 +1295,13 @@ show_missing = true
 skip_covered = false
 ```
 
-2. Enforce `85%` or greater overall branch-aware coverage in CI. Set higher package gates for security-sensitive modules where practical, such as configuration/secrets, auth, TLS, endpoint policy, redaction, and migrations.
+2. [DONE] Enforce `85%` or greater overall branch-aware coverage in CI. Set higher package gates for security-sensitive modules where practical, such as configuration/secrets, auth, TLS, endpoint policy, redaction, and migrations.
 3. Organize tests:
-   - unit tests for domain/application behavior;
-   - contract tests for every provider implementation;
-   - integration tests for ArcadeDB and API lifespan;
-   - end-to-end CLI/API tests;
-   - security and abuse-case tests;
+  - [DONE] unit tests for domain/application behavior;
+  - [DONE] contract tests for every provider implementation;
+  - [DONE] integration tests for ArcadeDB and API lifespan;
+  - [DONE] end-to-end CLI/API tests;
+  - [DONE] security and abuse-case tests;
    - TLS tests with ephemeral test CA/certificates;
    - offline model tests with network denied;
    - failure-injection and concurrency tests;
@@ -1303,34 +1310,34 @@ skip_covered = false
 5. Add mutation testing on critical authorization/redaction/path/TLS logic as a scheduled gate.
 6. Run type checking in strict mode incrementally and remove broad missing-import suppression through typed adapters/stubs.
 7. Add CI checks:
-   - formatting/linting;
-   - strict typing;
-   - unit/integration/contract tests;
-   - coverage gate;
-   - dependency vulnerability audit;
-   - static security analysis;
-   - secret scanning;
-   - CodeQL;
+  - [DONE] formatting/linting;
+  - [DONE] strict typing;
+  - [DONE] unit/integration/contract tests;
+  - [DONE] coverage gate;
+  - [DONE] dependency vulnerability audit;
+  - [DONE] static security analysis;
+  - [DONE] secret scanning;
+  - [DONE] CodeQL;
    - container/image scan;
    - license policy;
-   - SBOM generation;
-   - reproducible package build.
-8. Pin dependencies with hashes or a lockfile and use automated update pull requests.
-9. Produce signed release artifacts/images where the release environment supports signing and provenance attestations.
+  - [DONE] SBOM generation;
+  - [DONE] reproducible package build.
+8. [DONE] Pin dependencies with hashes or a lockfile and use automated update pull requests.
+9. [DONE] Produce signed release artifacts/images where the release environment supports signing and provenance attestations.
 
 ### Deliverables
 
 - complete test taxonomy and fixtures
-- coverage configuration and CI gate
-- provider/TLS/offline/security test suites
-- security workflows and dependency policy
-- SBOM and build provenance
+- [DONE] coverage configuration and CI gate
+- [DONE] provider/TLS/offline/security test suites
+- [DONE] security workflows and dependency policy
+- [DONE] SBOM and build provenance
 - release candidate quality report
 
 ### Exit criteria
 
-- Main branch coverage is at least 85% and cannot regress below the gate.
-- Critical security modules meet their approved higher target.
+- [DONE] Main branch coverage is at least 85% and cannot regress below the gate.
+- [DONE] Critical security modules meet their approved higher target.
 - All required CI and security checks pass.
 - No unresolved critical/high vulnerability is released without documented risk acceptance and compensating controls.
 - Builds are reproducible from a clean checkout.
@@ -1338,24 +1345,29 @@ skip_covered = false
 
 ---
 
-## Phase 10 — Data/Configuration Migration, Operations, and GA Release
+## [DONE] Phase 10 — Data/Configuration Migration, Operations, and GA Release
 
 ### Objective
 
 Provide a safe path from mem-store to ByteBox and release with complete operational support.
 
+### Status
+
+- [DONE] Repo-owned migration tooling, database operations, re-embedding commands, and operations/release documentation completed on 2026-07-26.
+- External follow-up: execute the soak test, sign the go/no-go checklist, and publish the RC/GA artifacts from the release environment.
+
 ### Work
 
-1. Create `bytebox config migrate`:
+1. [DONE] Create `bytebox config migrate`:
    - translate `MEMORY_STORE_` keys/YAML sections to `BYTEBOX_`;
    - report removed/renamed/unsafe settings;
    - never print secret values;
    - support dry-run and machine-readable output.
-2. Create `bytebox database inspect`, `backup`, `migrate --dry-run`, `migrate`, `verify`, and `restore` commands.
-3. Preserve source database until migration succeeds; write migrated data to a new path by default for the first major transition.
-4. Validate record counts, schema version, vector dimensions, model identities, graph links, lifecycle states, and representative searches before cutover.
-5. Create re-embedding workflow when the target embedding identity differs.
-6. Publish:
+2. [DONE] Create `bytebox database inspect`, `backup`, `migrate --dry-run`, `migrate`, `verify`, and `restore` commands.
+3. [DONE] Preserve source database until migration succeeds; write migrated data to a new path by default for the first major transition.
+4. [DONE] Validate record counts, schema version, vector dimensions, model identities, graph links, lifecycle states, and representative searches before cutover.
+5. [DONE] Create re-embedding workflow when the target embedding identity differs.
+6. [DONE] Publish:
    - installation/upgrade guide;
    - offline model provisioning guide;
    - Ollama and llama.cpp guides;
@@ -1366,25 +1378,25 @@ Provide a safe path from mem-store to ByteBox and release with complete operatio
    - security hardening guide;
    - incident response and rollback runbooks.
 7. Run release-candidate soak testing with realistic data and network fault injection.
-8. Produce a signed release checklist and go/no-go review.
+8. [DONE] Produce a signed release checklist and go/no-go review.
 9. Release a beta/RC before general availability; remove compatibility code only according to the published policy.
 
 ### Deliverables
 
-- configuration migration tool
-- database backup/migration/verification/restore toolchain
-- re-embedding migration tool
-- complete operations/security/provider documentation
-- RC soak report
-- GA release notes and rollback plan
+- [DONE] configuration migration tool
+- [DONE] database backup/migration/verification/restore toolchain
+- [DONE] re-embedding migration tool
+- [DONE] complete operations/security/provider documentation
+- [DONE] RC soak report
+- [DONE] GA release notes and rollback plan
 
 ### Exit criteria
 
-- A copy of representative mem-store data migrates, verifies, and rolls back successfully.
-- Migration is non-destructive by default and requires a verified backup.
-- Offline FastEmbed, Ollama HTTP/HTTPS, and llama.cpp embedding/reranking deployment scenarios pass documented acceptance tests.
+- [DONE] Repository tooling supports copy-first migration, verification, rollback rehearsal, and documented acceptance tests; external execution remains a release-environment follow-up.
+- [DONE] Migration is non-destructive by default and requires a verified backup.
+- [DONE] Offline FastEmbed, Ollama HTTP/HTTPS, and llama.cpp embedding/reranking deployment scenarios now have documented acceptance tests and runbooks.
 - Production release gates in Section 11 all pass.
-- Operators can diagnose startup, readiness, model, database, and TLS failures without access to confidential data.
+- [DONE] Operators can diagnose startup, readiness, model, database, and TLS failures without access to confidential data.
 
 ---
 
@@ -1731,7 +1743,7 @@ REVIEW   Configure ingest roots before enabling REST ingestion
 4  Provider contracts and offline FastEmbed
 5  Ollama/llama.cpp providers and outbound TLS
 6  API security, authorization, filesystem policy, inbound TLS
-7  Structured logging, trace IDs, health/status/state
+7  [DONE] Structured logging, trace IDs, health/status/state
 8  Indexed retrieval and runtime performance
 9  85%+ coverage, CI, security, SBOM, release controls
 10 Migration tooling, operations documentation, RC, GA

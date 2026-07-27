@@ -1,17 +1,17 @@
-# Memory Store Package Build, Install, Reinstall, and Uninstall Guide
+# ByteBox Package Build, Install, Reinstall, and Uninstall Guide
 
-This guide documents the standard local Python packaging workflow for building and installing the `memory_store` package from source.
+This guide documents the standard local Python packaging workflow for building and installing the `bytebox` package from source.
 
 ## 1. Recommended Project Structure
 
 A minimal Python package should look similar to this:
 
 ```text
-memory-store/
+bytebox/
 ├── pyproject.toml
 ├── README.md
 ├── src/
-│   └── memory_store/
+│   └── bytebox/
 │       ├── __init__.py
 │       └── ...
 └── tests/
@@ -20,14 +20,14 @@ memory-store/
 
 Recommended package name conventions:
 
-- **Distribution/package artifact name:** `memory-store` or `memory_store`
-- **Import/module name:** `memory_store`
+- **Distribution/package artifact name:** `bytebox`
+- **Import/module name:** `bytebox`
 - **Uninstall name:** usually the project name defined in `pyproject.toml`
 
 Example import:
 
 ```python
-import memory_store
+import bytebox
 ```
 
 ---
@@ -76,16 +76,16 @@ Expected result:
 
 ```text
 dist/
-├── memory_store-0.1.0.tar.gz
-└── memory_store-0.1.0-py3-none-any.whl
+├── bytebox-0.1.0.tar.gz
+└── bytebox-0.1.0-py3-none-any.whl
 ```
 
 ### What These Files Mean
 
 | File | Meaning | When to Use |
 |---|---|---|
-| `memory_store-0.1.0-py3-none-any.whl` | Built wheel package | Preferred for installation because it is faster and already built |
-| `memory_store-0.1.0.tar.gz` | Source distribution | Useful for source-based installs or publishing source packages |
+| `bytebox-0.1.0-py3-none-any.whl` | Built wheel package | Preferred for installation because it is faster and already built |
+| `bytebox-0.1.0.tar.gz` | Source distribution | Useful for source-based installs or publishing source packages |
 
 ---
 
@@ -117,7 +117,7 @@ python -m build
 ### Preferred: Install from Wheel
 
 ```bash
-pip install dist/memory_store-0.1.0-py3-none-any.whl
+pip install dist/bytebox-0.1.0-py3-none-any.whl
 ```
 
 Or, if you are already inside the `dist/` directory:
@@ -235,7 +235,7 @@ If your `pyproject.toml` uses a different distribution name, uninstall using tha
 Example:
 
 ```bash
-pip uninstall memory-store
+pip uninstall bytebox
 ```
 
 To confirm removal:
