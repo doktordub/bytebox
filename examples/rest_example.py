@@ -8,8 +8,16 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from bytebox.api import create_app
-from bytebox.models import HealthStatus, MemoryRecord, MemorySearchResult, MemoryStats, Scope
+from bytebox.api import create_inprocess_app
+from bytebox.models import (
+    HealthStatus,
+    InventoryDetailLevel,
+    MemoryInventoryReport,
+    MemoryRecord,
+    MemorySearchResult,
+    MemoryStats,
+    Scope,
+)
 
 
 def _chunk_payload(
@@ -125,12 +133,64 @@ class ExampleStore:
             type_counts={"observation": 1},
         )
 
+    def inventory(
+        self,
+        *,
+        detail: InventoryDetailLevel | str = InventoryDetailLevel.SUMMARY,
+        include_names: bool = False,
+        names_limit: int = 100,
+        include_document_chunks: bool = True,
+    ) -> MemoryInventoryReport:
+        del names_limit, include_document_chunks
+        detail_level = InventoryDetailLevel(detail)
+        return MemoryInventoryReport.model_validate(
+            {
+                "detail": detail_level,
+                "summary": {
+                    "total_records": 1,
+                    "scope_counts": {"global": 0, "scoped": 1},
+                    "status_counts": {"active": 1},
+                    "type_counts": {"observation": 1},
+                },
+                "scopes": {
+                    "distinct_scope_tuples": 1,
+                    "global_records": 0,
+                    "scoped_records": 1,
+                    "user_ids": {"count": 0, "names": [], "truncated": False, "remaining": 0},
+                    "project_ids": {
+                        "count": 1,
+                        "names": ["arcade"] if include_names else [],
+                        "truncated": False,
+                        "remaining": 0,
+                    },
+                    "agent_ids": {"count": 0, "names": [], "truncated": False, "remaining": 0},
+                }
+                if detail_level == InventoryDetailLevel.FULL
+                else None,
+                "memory_types": [
+                    {
+                        "memory_type": "observation",
+                        "display_name": "Observation",
+                        "count": 1,
+                        "status_counts": {"active": 1},
+                        "scope_counts": {"global": 0, "scoped": 1},
+                        "oldest_created_at": self.record.created_at,
+                        "newest_updated_at": self.record.updated_at,
+                    }
+                ]
+                if detail_level == InventoryDetailLevel.FULL
+                else [],
+            }
+        )
+
 
 def main() -> None:
-    app = create_app(store=ExampleStore())
+    app = create_inprocess_app(store=ExampleStore())
 
     with TestClient(app) as client:
         print(client.get("/health").json()["message"])
+        print(client.get("/stats").json()["total_records"])
+        print(client.get("/inventory", params={"detail": "full", "include_names": True}).json()["scopes"]["project_ids"]["names"][0])
         top_chunk = client.post(
             "/chunks/search",
             json={"scope": {"project_id": "arcade"}, "text": "deployment architecture"},

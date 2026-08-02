@@ -35,6 +35,39 @@ def create_app(
     store: Any | None = None,
     **overrides: Any,
 ) -> Any:
+    """Create the REST shim app with Swagger and OpenAPI routes enabled."""
+
+    return _create_app(
+        config_path,
+        store=store,
+        enable_docs=True,
+        **overrides,
+    )
+
+
+def create_inprocess_app(
+    config_path: str | Path | None = None,
+    *,
+    store: Any | None = None,
+    **overrides: Any,
+) -> Any:
+    """Create an in-process REST app without Swagger and OpenAPI routes."""
+
+    return _create_app(
+        config_path,
+        store=store,
+        enable_docs=False,
+        **overrides,
+    )
+
+
+def _create_app(
+    config_path: str | Path | None = None,
+    *,
+    store: Any | None = None,
+    enable_docs: bool,
+    **overrides: Any,
+) -> Any:
     try:
         from fastapi import FastAPI, Request
         from fastapi.exceptions import RequestValidationError
@@ -43,7 +76,13 @@ def create_app(
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError("fastapi is required to run the REST adapter.") from exc
 
-    settings = load_settings(config_path, **overrides)
+    settings_overrides = dict(overrides)
+    if enable_docs:
+        api_overrides = dict(settings_overrides.get("api") or {})
+        api_overrides["docs_enabled"] = True
+        settings_overrides["api"] = api_overrides
+
+    settings = load_settings(config_path, **settings_overrides)
     redactor = configure_logging(settings.logging)
     container: ApplicationContainer | None = None
     if store is None:
@@ -59,9 +98,9 @@ def create_app(
     app = FastAPI(
         title="ByteBox",
         version="0.1.0",
-        docs_url="/docs" if settings.api.docs_enabled else None,
-        redoc_url="/redoc" if settings.api.docs_enabled else None,
-        openapi_url="/openapi.json" if settings.api.docs_enabled else None,
+        docs_url="/docs" if enable_docs and settings.api.docs_enabled else None,
+        redoc_url="/redoc" if enable_docs and settings.api.docs_enabled else None,
+        openapi_url="/openapi.json" if enable_docs and settings.api.docs_enabled else None,
         lifespan=build_lifespan(managed_store=managed_store, container=container),
     )
     app.add_middleware(ApiContextMiddleware, settings=settings.api)

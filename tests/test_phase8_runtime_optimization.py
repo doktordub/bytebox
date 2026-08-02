@@ -53,6 +53,14 @@ class _FakeProvider:
 
 class _StatsRepository:
     def aggregate_stats(self) -> dict[str, object]:
+        raise AssertionError("stats should be projected from the inventory summary builder")
+
+    def aggregate_inventory_summary(
+        self,
+        *,
+        include_document_chunks: bool = True,
+    ) -> dict[str, object]:
+        assert include_document_chunks is True
         return {
             "total_records": 7,
             "scope_counts": {"global": 2, "scoped": 5},

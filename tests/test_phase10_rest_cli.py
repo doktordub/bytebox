@@ -8,14 +8,18 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from memory_store.api.main import create_app
+from memory_store.api.main import create_app as create_docs_app
+from memory_store.api.main import create_inprocess_app as create_app
 from memory_store.arcade import arcade_runtime_available
 from memory_store.cli import main
 from memory_store.embeddings.fastembed_provider import fastembed_runtime_available
 from memory_store.errors import MemoryNotFoundError
 from memory_store.models import (
     ImportResult,
+    InventoryDetailLevel,
     IngestResult,
+    MemoryInventoryQuery,
+    MemoryInventoryReport,
     MemoryCreate,
     MemoryExport,
     MemoryFeedback,
@@ -220,11 +224,81 @@ class FakeStore:
     def stats(self) -> MemoryStats:
         self._call("stats")
         return MemoryStats(
-            total_records=3,
-            scope_counts={"global": 1, "scoped": 2},
-            status_counts={"active": 3},
-            type_counts={"decision": 1, "observation": 2},
+            total_records=4,
+            scope_counts={"global": 1, "scoped": 3},
+            status_counts={"active": 4},
+            type_counts={"decision": 1, "document_chunk": 1, "observation": 2},
         )
+
+    def inventory(
+        self,
+        *,
+        detail: InventoryDetailLevel | str = InventoryDetailLevel.SUMMARY,
+        include_names: bool = False,
+        names_limit: int = 100,
+        include_document_chunks: bool = True,
+    ) -> MemoryInventoryReport:
+        self._call(
+            "inventory",
+            detail=detail,
+            include_names=include_names,
+            names_limit=names_limit,
+            include_document_chunks=include_document_chunks,
+        )
+        detail_level = InventoryDetailLevel(detail)
+        type_counts = {"decision": 1, "observation": 2}
+        if include_document_chunks:
+            type_counts["document_chunk"] = 1
+        total_records = sum(type_counts.values())
+        report = {
+            "detail": detail_level,
+            "summary": {
+                "total_records": total_records,
+                "scope_counts": {"global": 1, "scoped": total_records - 1},
+                "status_counts": {"active": total_records},
+                "type_counts": type_counts,
+            },
+            "scopes": None,
+            "memory_types": [],
+        }
+        if detail_level == InventoryDetailLevel.FULL:
+            names = ["arcade"] if include_names else []
+            report["scopes"] = {
+                "distinct_scope_tuples": 2,
+                "global_records": 1,
+                "scoped_records": total_records - 1,
+                "user_ids": {
+                    "count": 1,
+                    "names": names[:names_limit],
+                    "truncated": False,
+                    "remaining": 0,
+                },
+                "project_ids": {
+                    "count": 1,
+                    "names": names[:names_limit],
+                    "truncated": False,
+                    "remaining": 0,
+                },
+                "agent_ids": {
+                    "count": 0,
+                    "names": [],
+                    "truncated": False,
+                    "remaining": 0,
+                },
+            }
+            report["memory_types"] = [
+                {
+                    "memory_type": memory_type,
+                    "display_name": memory_type.replace("_", " ").title(),
+                    "count": count,
+                    "status_counts": {"active": count},
+                    "scope_counts": {"global": 1 if memory_type == "observation" else 0, "scoped": count - (1 if memory_type == "observation" else 0)},
+                    "oldest_created_at": "2026-07-01T00:00:00Z",
+                    "newest_updated_at": "2026-07-02T00:00:00Z",
+                }
+                for memory_type, count in sorted(type_counts.items())
+            ]
+        return MemoryInventoryReport.model_validate(report)
 
 
 def test_rest_routes_delegate_to_store_and_enforce_local_token() -> None:
@@ -372,7 +446,7 @@ def test_rest_routes_delegate_to_store_and_enforce_local_token() -> None:
 
         stats_response = client.get("/stats", headers=headers)
         assert stats_response.status_code == 200
-        assert stats_response.json()["total_records"] == 3
+        assert stats_response.json()["total_records"] == 4
 
     called_methods = [name for name, _args, _kwargs in store.calls]
     assert called_methods == [
@@ -405,6 +479,140 @@ def test_rest_routes_delegate_to_store_and_enforce_local_token() -> None:
         "since": datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc),
     }
     assert store.closed is True
+
+
+def test_inventory_contract_and_openapi_metadata_are_explicit() -> None:
+    query = MemoryInventoryQuery()
+    report = MemoryInventoryReport()
+
+    assert query.detail == InventoryDetailLevel.SUMMARY
+    assert query.include_names is False
+    assert query.names_limit == 100
+    assert query.include_document_chunks is True
+    assert report.detail == InventoryDetailLevel.SUMMARY
+    assert report.generated_at.tzinfo is not None
+    assert report.summary.total_records == 0
+    note_codes = {note.code for note in report.notes}
+    assert note_codes >= {
+        "episodic_bucket_deferred",
+        "scope_names_sensitive",
+        "inventory_fields_redacted",
+    }
+    assert "conversation_summary" in report.notes[0].message
+
+    app = create_docs_app(store=FakeStore(), api={"local_api_token": "secret-token"})
+
+    with TestClient(app) as client:
+        openapi_response = client.get("/openapi.json")
+        assert openapi_response.status_code == 200
+        payload = openapi_response.json()
+
+        assert payload["paths"]["/status"]["get"]["summary"] == "Runtime status summary"
+        assert payload["paths"]["/state"]["get"]["summary"] == "Operational state snapshot"
+        assert payload["paths"]["/metrics"]["get"]["summary"] == "OpenMetrics scrape payload"
+        assert payload["paths"]["/stats"]["get"]["summary"] == "Compact database summary"
+
+        inventory_operation = payload["paths"]["/inventory"]["get"]
+        assert inventory_operation["summary"] == "Database inventory contract"
+        assert "Return the detailed database inventory" in inventory_operation["description"]
+        assert "scope names are sensitive" in inventory_operation["description"]
+        assert "Raw record text, embeddings, and absolute file-system paths are excluded" in inventory_operation["description"]
+
+        parameters = {item["name"]: item for item in inventory_operation["parameters"]}
+        for name in ("detail", "include_names", "names_limit", "include_document_chunks"):
+            assert name in parameters
+        assert parameters["detail"]["schema"]["default"] == "summary"
+        assert parameters["names_limit"]["schema"]["default"] == 100
+
+        inventory_response = client.get(
+            "/inventory",
+            headers={"X-API-Token": "secret-token"},
+            params={"detail": "full", "include_names": True, "names_limit": 1},
+        )
+        assert inventory_response.status_code == 200
+        inventory_payload = inventory_response.json()
+        assert inventory_payload["detail"] == "full"
+        assert inventory_payload["generated_at"]
+        assert inventory_payload["summary"]["total_records"] == 4
+        assert inventory_payload["scopes"]["project_ids"]["names"] == ["arcade"]
+        assert {item["memory_type"] for item in inventory_payload["memory_types"]} == {
+            "decision",
+            "document_chunk",
+            "observation",
+        }
+        assert {item["code"] for item in inventory_payload["notes"]} >= {
+            "episodic_bucket_deferred",
+            "scope_names_sensitive",
+            "inventory_fields_redacted",
+        }
+
+        serialized = json.dumps(inventory_payload)
+        assert _record().text not in serialized
+        assert _record().summary not in serialized
+        assert "./fake-db" not in serialized
+        assert '"source_path"' not in serialized
+        assert '"embedding_model"' not in serialized
+
+
+def test_state_and_stats_share_the_inventory_summary_surface() -> None:
+    store = FakeStore()
+    app = create_app(
+        store=store,
+        api={
+            "local_api_token": "secret-token",
+            "local_api_token_scopes": ["admin:read", "admin:operate"],
+        },
+        database={"path": "./fake-db"},
+    )
+
+    with TestClient(app) as client:
+        headers = {"X-API-Token": "secret-token"}
+
+        stats_response = client.get("/stats", headers=headers)
+        assert stats_response.status_code == 200
+
+        inventory_response = client.get(
+            "/inventory",
+            headers=headers,
+            params={
+                "detail": "full",
+                "include_names": True,
+                "names_limit": 1,
+                "include_document_chunks": False,
+            },
+        )
+        assert inventory_response.status_code == 200
+        assert inventory_response.json()["summary"]["type_counts"] == {
+            "decision": 1,
+            "observation": 2,
+        }
+
+        state_response = client.get("/state", headers=headers)
+        assert state_response.status_code == 200
+        state_payload = state_response.json()
+
+    assert state_payload["counters"] == {
+        "total_records": stats_response.json()["total_records"],
+        "global_records": stats_response.json()["scope_counts"]["global"],
+        "scoped_records": stats_response.json()["scope_counts"]["scoped"],
+    }
+    assert state_payload["memory_status_counts"] == stats_response.json()["status_counts"]
+    assert state_payload["memory_type_counts"] == stats_response.json()["type_counts"]
+    inventory_calls = [kwargs for name, _args, kwargs in store.calls if name == "inventory"]
+    assert inventory_calls == [
+        {
+            "detail": InventoryDetailLevel.FULL,
+            "include_names": True,
+            "names_limit": 1,
+            "include_document_chunks": False,
+        },
+        {
+            "detail": InventoryDetailLevel.SUMMARY,
+            "include_names": False,
+            "names_limit": 100,
+            "include_document_chunks": True,
+        },
+    ]
 
 
 def test_rest_chunk_routes_define_chunk_specific_contract() -> None:
@@ -453,7 +661,9 @@ def test_rest_chunk_routes_define_chunk_specific_contract() -> None:
 
 @pytest.mark.skipif(not arcade_runtime_available(), reason="arcadedb_embedded is required")
 def test_rest_app_smoke_flows_against_real_store(tmp_path) -> None:
-    app = create_app(
+    from memory_store.api.main import create_app as create_rest_shim_app
+
+    app = create_rest_shim_app(
         database={"path": tmp_path / "arcade", "schema_version": 1},
         embeddings={"dim": 4},
         reranker={"enabled": False},

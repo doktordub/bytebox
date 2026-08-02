@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from bytebox.api.main import create_app
+from bytebox.api.main import create_inprocess_app as create_app
 from bytebox.embeddings import get_current_traceparent
-from bytebox.models import HealthStatus, MemoryStats
+from bytebox.models import HealthStatus, InventoryDetailLevel, MemoryInventoryReport, MemoryStats
 
 
 class _ReadyStore:
@@ -38,6 +38,72 @@ class _ReadyStore:
             status_counts={"active": 3},
             type_counts={"decision": 1, "observation": 2},
         )
+
+    def inventory(
+        self,
+        *,
+        detail: InventoryDetailLevel | str = InventoryDetailLevel.SUMMARY,
+        include_names: bool = False,
+        names_limit: int = 100,
+        include_document_chunks: bool = True,
+    ) -> MemoryInventoryReport:
+        del include_document_chunks
+        detail_level = InventoryDetailLevel(detail)
+        response = {
+            "detail": detail_level,
+            "generated_at": "2025-01-01T00:00:00Z",
+            "summary": {
+                "total_records": 3,
+                "scope_counts": {"global": 1, "scoped": 2},
+                "status_counts": {"active": 2, "forgotten": 1},
+                "type_counts": {"decision": 1, "observation": 2},
+            },
+        }
+        if detail_level == InventoryDetailLevel.FULL:
+            response["scopes"] = {
+                "distinct_scope_tuples": 2,
+                "global_records": 1,
+                "scoped_records": 2,
+                "user_ids": {
+                    "count": 1,
+                    "names": ["alice"][:names_limit] if include_names else [],
+                    "truncated": False,
+                    "remaining": 0,
+                },
+                "project_ids": {
+                    "count": 1,
+                    "names": ["secret-project"][:names_limit] if include_names else [],
+                    "truncated": False,
+                    "remaining": 0,
+                },
+                "agent_ids": {
+                    "count": 1,
+                    "names": ["copilot-secret"][:names_limit] if include_names else [],
+                    "truncated": False,
+                    "remaining": 0,
+                },
+            }
+            response["memory_types"] = [
+                {
+                    "memory_type": "decision",
+                    "display_name": "Decision",
+                    "count": 1,
+                    "status_counts": {"active": 1},
+                    "scope_counts": {"global": 0, "scoped": 1},
+                    "oldest_created_at": "2025-01-01T00:00:00Z",
+                    "newest_updated_at": "2025-01-02T00:00:00Z",
+                },
+                {
+                    "memory_type": "observation",
+                    "display_name": "Observation",
+                    "count": 2,
+                    "status_counts": {"active": 1, "forgotten": 1},
+                    "scope_counts": {"global": 1, "scoped": 1},
+                    "oldest_created_at": "2025-01-03T00:00:00Z",
+                    "newest_updated_at": "2025-01-04T00:00:00Z",
+                },
+            ]
+        return MemoryInventoryReport.model_validate(response)
 
 
 class _NotReadyStore(_ReadyStore):
@@ -148,5 +214,14 @@ def test_metrics_endpoint_and_off_logging_do_not_emit_bytebox_logs(tmp_path: Pat
             assert metrics.status_code == 200
             assert "bytebox_uptime_seconds" in metrics.text
             assert "bytebox_inflight_operations" in metrics.text
+            assert "bytebox_memory_records_total" in metrics.text
+            assert 'bytebox_memory_scope_records_total{scope_kind="global"} 1.0' in metrics.text
+            assert 'bytebox_memory_scope_records_total{scope_kind="scoped"} 2.0' in metrics.text
+            assert 'bytebox_memory_scope_dimension_total{dimension="project_id"} 1.0' in metrics.text
+            assert "bytebox_memory_scope_tuples_total 2.0" in metrics.text
+            assert "bytebox_inventory_report_generated_seconds 1735689600.0" in metrics.text
+            assert "alice" not in metrics.text
+            assert "secret-project" not in metrics.text
+            assert str(store.database_path) not in metrics.text
 
     assert not [record for record in caplog.records if record.name.startswith("bytebox")]

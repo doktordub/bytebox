@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 
 import pytest
+from fastapi.testclient import TestClient
 
 from bytebox import (
     ByteBox,
@@ -76,10 +77,30 @@ def test_bytebox_cli_prog_name() -> None:
 
 
 def test_bytebox_api_title() -> None:
-    from bytebox.api.main import create_app
+    from bytebox.api.main import create_inprocess_app
 
     class NoopStore:
         def close(self) -> None:
             return None
 
-    assert create_app(store=NoopStore()).title == "ByteBox"
+    app = create_inprocess_app(store=NoopStore())
+
+    assert app.title == "ByteBox"
+    assert app.docs_url is None
+    assert app.openapi_url is None
+
+
+def test_bytebox_rest_shim_loads_swagger_routes() -> None:
+    from bytebox.api.main import create_app, create_inprocess_app
+
+    class NoopStore:
+        def close(self) -> None:
+            return None
+
+    with TestClient(create_app(store=NoopStore())) as shim_client:
+        assert shim_client.get("/docs").status_code == 200
+        assert shim_client.get("/openapi.json").status_code == 200
+
+    with TestClient(create_inprocess_app(store=NoopStore())) as client:
+        assert client.get("/docs").status_code == 404
+        assert client.get("/openapi.json").status_code == 404

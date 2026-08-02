@@ -17,10 +17,12 @@ from .models import (
     ImportMode,
     ImportResult,
     IngestResult,
+    InventoryDetailLevel,
     MemoryCreate,
     MemoryExport,
     MemoryFeedback,
     MemoryImport,
+    MemoryInventoryReport,
     MemoryRecord,
     MemorySearchQuery,
     MemorySearchResult,
@@ -223,6 +225,22 @@ class MemoryStore:
 
     def add_feedback(self, memory_id: str, feedback: MemoryFeedback) -> MemoryRecord:
         return self._call_service("add_feedback", memory_id, feedback)
+
+    def inventory(
+        self,
+        *,
+        detail: InventoryDetailLevel | str = InventoryDetailLevel.SUMMARY,
+        include_names: bool = False,
+        names_limit: int = 100,
+        include_document_chunks: bool = True,
+    ) -> MemoryInventoryReport:
+        return self._call_service(
+            "inventory",
+            detail=detail,
+            include_names=include_names,
+            names_limit=names_limit,
+            include_document_chunks=include_document_chunks,
+        )
 
     def stats(self) -> MemoryStats:
         return self._call_service("stats")

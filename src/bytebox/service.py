@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
-from datetime import datetime, timezone
 import inspect
 import json
+from contextlib import suppress
+from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
 from typing import Any, NoReturn
@@ -55,10 +55,12 @@ from .models import (
     IngestPhase,
     IngestResult,
     IngestTimings,
+    InventoryDetailLevel,
     MemoryCreate,
     MemoryExport,
     MemoryFeedback,
     MemoryImport,
+    MemoryInventoryReport,
     MemoryRecord,
     MemorySearchQuery,
     MemorySearchResult,
@@ -67,8 +69,8 @@ from .models import (
     RedactionResult,
     Scope,
 )
-from .privacy import PrivacyController
 from .observability.logging import log_event, log_exception_event
+from .privacy import PrivacyController
 from .services import AdministrationService, MemoryCommandService, MemoryQueryService
 from .services.ingestion import DocumentIngestionService
 from .services.lifecycle import LifecycleService
@@ -418,6 +420,21 @@ class MemoryService:
 
     def add_feedback(self, memory_id: str, feedback: MemoryFeedback) -> MemoryRecord:
         return self._lifecycle_service().add_feedback(memory_id, feedback)
+
+    def inventory(
+        self,
+        *,
+        detail: InventoryDetailLevel | str = InventoryDetailLevel.SUMMARY,
+        include_names: bool = False,
+        names_limit: int = 100,
+        include_document_chunks: bool = True,
+    ) -> MemoryInventoryReport:
+        return self._administration().inventory(
+            detail=detail,
+            include_names=include_names,
+            names_limit=names_limit,
+            include_document_chunks=include_document_chunks,
+        )
 
     def stats(self) -> MemoryStats:
         return self._administration().stats()

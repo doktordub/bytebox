@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from fastapi import Request
+from fastapi import Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ..auth import AuthScope
@@ -29,8 +29,10 @@ from ..models import (
     HealthStateReport,
     HealthStatus,
     HealthStatusReport,
+    InventoryDetailLevel,
     ImportResult,
     IngestResult,
+    MemoryInventoryReport,
     MemoryExport,
     MemoryFeedback,
     MemoryRecord,
@@ -256,7 +258,17 @@ def register_routes(
     def health() -> HealthStatus:
         return store.health()
 
-    @app.get("/status", response_model=HealthStatusReport, **route_kwargs(AuthScope.ADMIN_READ.value))
+    @app.get(
+        "/status",
+        response_model=HealthStatusReport,
+        summary="Runtime status summary",
+        description=(
+            "Return a sanitized build, configuration, and runtime summary for authenticated "
+            "operators. This route stays runtime-focused; use /inventory for detailed database "
+            "contents and use /stats for the compact backward-compatible record summary."
+        ),
+        **route_kwargs(AuthScope.ADMIN_READ.value),
+    )
     def status(request: Request) -> HealthStatusReport:
         return build_status_report(
             store=store,
@@ -264,7 +276,17 @@ def register_routes(
             container=getattr(request.app.state, "bytebox_container", None),
         )
 
-    @app.get("/state", response_model=HealthStateReport, **route_kwargs(AuthScope.ADMIN_OPERATE.value))
+    @app.get(
+        "/state",
+        response_model=HealthStateReport,
+        summary="Operational state snapshot",
+        description=(
+            "Return privileged operational state, top-line counters, provider and storage state, "
+            "safe recent error details, and bounded metric snapshots. This route may mirror "
+            "summary inventory counts, but it must not become the detailed database catalog."
+        ),
+        **route_kwargs(AuthScope.ADMIN_OPERATE.value),
+    )
     def state(request: Request) -> HealthStateReport:
         return build_state_report(
             store=store,
@@ -273,15 +295,76 @@ def register_routes(
             metrics=getattr(request.app.state, "bytebox_metrics", None),
         )
 
-    @app.get("/metrics", response_class=PlainTextResponse, **route_kwargs(*metrics_scopes))
+    @app.get(
+        "/metrics",
+        response_class=PlainTextResponse,
+        summary="OpenMetrics scrape payload",
+        description=(
+            "Return scrape-safe scalar metrics only. This surface must remain low-cardinality and "
+            "must not expose user, project, or agent identity lists, raw record text, embeddings, "
+            "or absolute file-system paths."
+        ),
+        **route_kwargs(*metrics_scopes),
+    )
     def metrics(request: Request) -> PlainTextResponse:
         payload = build_metrics_payload(
+            store=store,
             settings=settings or MemoryStoreSettings(),
             container=getattr(request.app.state, "bytebox_container", None),
             metrics=getattr(request.app.state, "bytebox_metrics", None),
         )
         return PlainTextResponse(payload, media_type="text/plain; version=0.0.4")
 
-    @app.get("/stats", response_model=MemoryStats, **route_kwargs(AuthScope.ADMIN_READ.value))
+    @app.get(
+        "/stats",
+        response_model=MemoryStats,
+        summary="Compact database summary",
+        description=(
+            "Return backward-compatible aggregate memory counts only. This route remains the "
+            "compact summary surface and will continue to avoid detailed scope-name lists or "
+            "high-cardinality inventory data."
+        ),
+        **route_kwargs(AuthScope.ADMIN_READ.value),
+    )
     def stats() -> MemoryStats:
         return store.stats()
+
+    @app.get(
+        "/inventory",
+        response_model=MemoryInventoryReport,
+        summary="Database inventory contract",
+        description=(
+            "Return the detailed database inventory for authenticated operators and agents. "
+            "Use this route for bounded scope-name lists and per-type inventory details; scope "
+            "names are sensitive, admin-readable, and may be truncated when capped. Raw record "
+            "text, embeddings, and absolute file-system paths are excluded. Use /stats for the "
+            "compact backward-compatible summary and use /state for broader operational status."
+        ),
+        **route_kwargs(AuthScope.ADMIN_READ.value),
+    )
+    def inventory(
+        detail: InventoryDetailLevel = Query(
+            default=InventoryDetailLevel.SUMMARY,
+            description="Select summary for compact counts or full for per-scope and per-type detail.",
+        ),
+        include_names: bool = Query(
+            default=False,
+            description="Include bounded scope identity lists when the detailed inventory path is enabled.",
+        ),
+        names_limit: int = Query(
+            default=100,
+            ge=1,
+            le=1000,
+            description="Maximum number of names to include for each scope dimension.",
+        ),
+        include_document_chunks: bool = Query(
+            default=True,
+            description="Include document_chunk records in the detailed inventory view.",
+        ),
+    ) -> MemoryInventoryReport:
+        return store.inventory(
+            detail=detail,
+            include_names=include_names,
+            names_limit=names_limit,
+            include_document_chunks=include_document_chunks,
+        )

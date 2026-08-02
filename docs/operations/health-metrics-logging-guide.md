@@ -7,8 +7,12 @@
 | `/health/live` | Process liveness | No deep dependency calls |
 | `/health/ready` | Admission control | Returns `503` when required dependencies are not ready |
 | `/status` | Safe runtime summary | Build, schema, provider, TLS, and logging state |
-| `/state` | Privileged operations view | Counters, circuit state, safe recent errors |
+| `/state` | Privileged operations view | Runtime state plus top-line inventory counters |
+| `/stats` | Compact database summary | Backward-compatible aggregate record counts only |
+| `/inventory` | Detailed database inventory | Bounded scope-name lists and per-type breakdowns |
 | `/metrics` | Monitoring scrape | Enable and protect separately as needed |
+
+Use `/status` for build and runtime configuration, `/state` for operational diagnosis, `/stats` for low-noise aggregate counts, `/inventory` for detailed stored-data inspection, and `/metrics` for scrape-safe scalar monitoring.
 
 ## Trace IDs
 
@@ -41,6 +45,8 @@ Supported levels are `debug`, `info`, `warn`, and `off`.
 curl http://127.0.0.1:8080/health/live
 curl http://127.0.0.1:8080/health/ready
 curl http://127.0.0.1:8080/status -H "X-API-Token: <operator-token>"
+curl http://127.0.0.1:8080/stats -H "X-API-Token: <operator-token>"
+curl "http://127.0.0.1:8080/inventory?detail=full&include_names=true" -H "X-API-Token: <operator-token>"
 ```
 
 Use the returned trace ID when investigating any non-200 response.

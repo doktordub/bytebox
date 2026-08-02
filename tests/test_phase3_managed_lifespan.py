@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 import memory_store.service as service_module
 from memory_store import MemoryStore
-from memory_store.api.main import create_app
+from memory_store.api.main import create_inprocess_app as create_app
 from memory_store.arcade import arcade_runtime_available
 from memory_store.arcade.connection import normalize_database_path
 from memory_store.bootstrap.container import ReadinessState

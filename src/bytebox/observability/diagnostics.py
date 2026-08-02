@@ -18,6 +18,7 @@ from ..models import (
     HealthStateReport,
     HealthStatusReport,
     HealthLiveness,
+    InventoryDetailLevel,
     ReadinessCheck,
 )
 
@@ -155,7 +156,7 @@ def build_state_report(
     metrics: Any | None,
 ) -> HealthStateReport:
     health = _resolve_health(store)
-    stats = store.stats()
+    summary = store.inventory(detail=InventoryDetailLevel.SUMMARY).summary
     storage_path = _storage_probe_path(settings.database.path)
     writable = os.access(storage_path, os.W_OK)
     free_space_category = "unknown"
@@ -179,12 +180,12 @@ def build_state_report(
         status=_readiness_label(container, health),
         trace_id=_trace_id(),
         counters={
-            "total_records": stats.total_records,
-            "global_records": stats.scope_counts.get("global", 0),
-            "scoped_records": stats.scope_counts.get("scoped", 0),
+            "total_records": summary.total_records,
+            "global_records": summary.scope_counts.get("global", 0),
+            "scoped_records": summary.scope_counts.get("scoped", 0),
         },
-        memory_status_counts=stats.status_counts,
-        memory_type_counts=stats.type_counts,
+        memory_status_counts=summary.status_counts,
+        memory_type_counts=summary.type_counts,
         queue={
             "accepting_operations": bool(container.accepting_operations) if container is not None else True,
             "in_flight_operations": int(container.in_flight_operations) if container is not None else 0,
@@ -205,11 +206,13 @@ def build_state_report(
 
 def build_metrics_payload(
     *,
+    store: Any,
     settings: MemoryStoreSettings,
     container: ApplicationContainer | None,
     metrics: Any,
 ) -> str:
     lines = [metrics.render_openmetrics().rstrip()] if metrics is not None else []
+    lines.extend(_inventory_metric_lines(store))
     uptime_seconds = _uptime_seconds(container)
     lines.extend(
         [
@@ -226,6 +229,95 @@ def build_metrics_payload(
         lines.append(f'bytebox_readiness_state{{state="{state_name}"}} {value}')
     lines.append(f'bytebox_metrics_enabled {1.0 if settings.api.metrics_enabled else 0.0}')
     return "\n".join(line for line in lines if line) + "\n"
+
+
+def _inventory_metric_lines(store: Any) -> list[str]:
+    try:
+        report = store.inventory(
+            detail=InventoryDetailLevel.FULL,
+            include_names=False,
+            include_document_chunks=True,
+        )
+    except Exception:
+        return []
+
+    lines = ["# TYPE bytebox_memory_records_total gauge"]
+    for item in report.memory_types:
+        for status, count in sorted(item.status_counts.items()):
+            lines.append(
+                _format_metric_line(
+                    "bytebox_memory_records_total",
+                    count,
+                    {
+                        "memory_type": item.memory_type.value,
+                        "status": status,
+                    },
+                )
+            )
+
+    lines.append("# TYPE bytebox_memory_scope_records_total gauge")
+    for scope_kind in ("global", "scoped"):
+        lines.append(
+            _format_metric_line(
+                "bytebox_memory_scope_records_total",
+                report.summary.scope_counts.get(scope_kind, 0),
+                {"scope_kind": scope_kind},
+            )
+        )
+
+    if report.scopes is not None:
+        lines.append("# TYPE bytebox_memory_scope_dimension_total gauge")
+        for dimension, count in (
+            ("user_id", report.scopes.user_ids.count),
+            ("project_id", report.scopes.project_ids.count),
+            ("agent_id", report.scopes.agent_ids.count),
+        ):
+            lines.append(
+                _format_metric_line(
+                    "bytebox_memory_scope_dimension_total",
+                    count,
+                    {"dimension": dimension},
+                )
+            )
+
+        lines.append("# TYPE bytebox_memory_scope_tuples_total gauge")
+        lines.append(
+            _format_metric_line(
+                "bytebox_memory_scope_tuples_total",
+                report.scopes.distinct_scope_tuples,
+            )
+        )
+
+    lines.append("# TYPE bytebox_inventory_report_generated_seconds gauge")
+    lines.append(
+        _format_metric_line(
+            "bytebox_inventory_report_generated_seconds",
+            report.generated_at.timestamp(),
+        )
+    )
+    return lines
+
+
+def _format_metric_line(
+    name: str,
+    value: float | int,
+    labels: dict[str, str] | None = None,
+) -> str:
+    return f"{name}{_format_metric_labels(labels)} {float(value)}"
+
+
+def _format_metric_labels(labels: dict[str, str] | None) -> str:
+    if not labels:
+        return ""
+    rendered = ",".join(
+        f'{key}="{_escape_metric_label_value(value)}"'
+        for key, value in sorted(labels.items())
+    )
+    return f"{{{rendered}}}"
+
+
+def _escape_metric_label_value(value: str) -> str:
+    return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
 
 def _database_check(

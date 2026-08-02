@@ -282,6 +282,61 @@ class FakePythonExampleStore:
             type_counts={"decision": 1, "project_fact": 1},
         )
 
+    def inventory(
+        self,
+        *,
+        detail: str = "summary",
+        include_names: bool = False,
+        names_limit: int = 100,
+        include_document_chunks: bool = True,
+    ) -> Any:
+        from memory_store.models import InventoryDetailLevel, MemoryInventoryReport
+
+        del include_document_chunks
+        detail_level = InventoryDetailLevel(detail)
+        return MemoryInventoryReport.model_validate(
+            {
+                "detail": detail_level,
+                "summary": {
+                    "total_records": 2,
+                    "scope_counts": {"global": 0, "scoped": 2},
+                    "status_counts": {"active": 2},
+                    "type_counts": {"decision": 1, "project_fact": 1},
+                },
+                "scopes": {
+                    "distinct_scope_tuples": 1,
+                    "global_records": 0,
+                    "scoped_records": 2,
+                    "user_ids": {"count": 0, "names": [], "truncated": False, "remaining": 0},
+                    "project_ids": {
+                        "count": 1,
+                        "names": ["arcade"][:names_limit] if include_names else [],
+                        "truncated": False,
+                        "remaining": 0,
+                    },
+                    "agent_ids": {"count": 0, "names": [], "truncated": False, "remaining": 0},
+                }
+                if detail_level == InventoryDetailLevel.FULL
+                else None,
+                "memory_types": [] if detail_level != InventoryDetailLevel.FULL else [
+                    {
+                        "memory_type": "decision",
+                        "display_name": "Decision",
+                        "count": 1,
+                        "status_counts": {"active": 1},
+                        "scope_counts": {"global": 0, "scoped": 1},
+                    },
+                    {
+                        "memory_type": "project_fact",
+                        "display_name": "Project Fact",
+                        "count": 1,
+                        "status_counts": {"active": 1},
+                        "scope_counts": {"global": 0, "scoped": 1},
+                    },
+                ],
+            }
+        )
+
     def close(self) -> None:
         self.closed = True
 
@@ -585,6 +640,7 @@ def test_examples_are_smoke_tested_where_practical(capsys) -> None:
     python_output = capsys.readouterr().out
     assert "created=" in python_output
     assert "top_result=" in python_output
+    assert "inventory_project=arcade" in python_output
 
     markdown_example = runpy.run_path(str(Path("examples/markdown_ingest_example.py")))
     markdown_example["run_example"](store_factory=lambda **_kwargs: FakeMarkdownExampleStore())

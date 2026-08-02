@@ -66,6 +66,9 @@ def run_example(store_factory: StoreFactory = ByteBox.from_config) -> None:
             print(f"top_result={results[0].memory.memory_id if results else 'none'}")
             print(f"confidence={updated.confidence}")
             print(f"total_records={store.stats().total_records}")
+            inventory = store.inventory(detail="full", include_names=True, names_limit=1)
+            project_names = inventory.scopes.project_ids.names if inventory.scopes is not None else []
+            print(f"inventory_project={project_names[0] if project_names else 'none'}")
         finally:
             close = getattr(store, "close", None)
             if callable(close):

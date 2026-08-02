@@ -352,21 +352,128 @@ class ArcadeMemoryRepository:
 			return 0
 		return int(result.get("count") or 0)
 
-	def aggregate_stats(self) -> dict[str, Any]:
-		total_records = self._query_scalar(f"SELECT count(*) as count FROM {MEMORY_RECORD_VERTEX}")
-		global_records = self._query_scalar(
-			f"SELECT count(*) as count FROM {MEMORY_RECORD_VERTEX} "
-			"WHERE user_id IS NULL AND project_id IS NULL AND agent_id IS NULL"
+	def aggregate_inventory_summary(
+		self,
+		*,
+		include_document_chunks: bool = True,
+	) -> dict[str, Any]:
+		where_parts, args = self._inventory_where(
+			include_document_chunks=include_document_chunks,
+		)
+		total_records = self._count_matching_rows(where_parts, args)
+		global_records = self._count_matching_rows(
+			[
+				*where_parts,
+				"user_id IS NULL",
+				"project_id IS NULL",
+				"agent_id IS NULL",
+			],
+			args,
 		)
 		return {
 			"total_records": total_records,
 			"scope_counts": {
 				"global": global_records,
-				"scoped": total_records - global_records,
+				"scoped": max(total_records - global_records, 0),
 			},
-			"status_counts": self._group_counts("status"),
-			"type_counts": self._group_counts("memory_type"),
+			"status_counts": self._group_counts("status", where_parts=where_parts, args=args),
+			"type_counts": self._group_counts("memory_type", where_parts=where_parts, args=args),
 		}
+
+	def aggregate_inventory_scopes(
+		self,
+		*,
+		include_names: bool,
+		names_limit: int,
+		include_document_chunks: bool = True,
+	) -> dict[str, Any]:
+		where_parts, args = self._inventory_where(
+			include_document_chunks=include_document_chunks,
+		)
+		total_records = self._count_matching_rows(where_parts, args)
+		global_records = self._count_matching_rows(
+			[
+				*where_parts,
+				"user_id IS NULL",
+				"project_id IS NULL",
+				"agent_id IS NULL",
+			],
+			args,
+		)
+		return {
+			"distinct_scope_tuples": self._count_distinct_scope_tuples(where_parts, args),
+			"global_records": global_records,
+			"scoped_records": max(total_records - global_records, 0),
+			"user_ids": self._aggregate_scope_dimension(
+				"user_id",
+				include_names=include_names,
+				names_limit=names_limit,
+				where_parts=where_parts,
+				args=args,
+			),
+			"project_ids": self._aggregate_scope_dimension(
+				"project_id",
+				include_names=include_names,
+				names_limit=names_limit,
+				where_parts=where_parts,
+				args=args,
+			),
+			"agent_ids": self._aggregate_scope_dimension(
+				"agent_id",
+				include_names=include_names,
+				names_limit=names_limit,
+				where_parts=where_parts,
+				args=args,
+			),
+		}
+
+	def aggregate_inventory_memory_types(
+		self,
+		*,
+		include_document_chunks: bool = True,
+	) -> list[dict[str, Any]]:
+		where_parts, args = self._inventory_where(
+			include_document_chunks=include_document_chunks,
+		)
+		type_counts = self._group_counts("memory_type", where_parts=where_parts, args=args)
+		inventory: list[dict[str, Any]] = []
+		for memory_type, count in sorted(type_counts.items()):
+			type_where = [*where_parts, "memory_type = ?"]
+			type_args = [*args, memory_type]
+			global_records = self._count_matching_rows(
+				[
+					*type_where,
+					"user_id IS NULL",
+					"project_id IS NULL",
+					"agent_id IS NULL",
+				],
+				type_args,
+			)
+			oldest_created_at, newest_updated_at = self._aggregate_timestamp_bounds(
+				type_where,
+				type_args,
+			)
+			inventory.append(
+				{
+					"memory_type": memory_type,
+					"count": count,
+					"status_counts": self._group_counts(
+						"status",
+						where_parts=type_where,
+						args=type_args,
+					),
+					"scope_counts": {
+						"global": global_records,
+						"scoped": max(count - global_records, 0),
+					},
+					"oldest_created_at": oldest_created_at,
+					"newest_updated_at": newest_updated_at,
+				}
+			)
+		return inventory
+
+	def aggregate_stats(self) -> dict[str, Any]:
+		return self.aggregate_inventory_summary(include_document_chunks=True)
 
 	def _insert_memory(
 		self,
@@ -482,12 +589,27 @@ class ArcadeMemoryRepository:
 			return 0
 		return int(result.get("count") or 0)
 
-	def _group_counts(self, field_name: str) -> dict[str, int]:
-		results = self._database.query(
-			"sql",
-			f"SELECT {field_name} as group_key, count(*) as count "
-			f"FROM {MEMORY_RECORD_VERTEX} GROUP BY {field_name}",
+	def _count_matching_rows(self, where_parts: Sequence[str], args: Sequence[Any]) -> int:
+		query, params = self._select_where(
+			list(where_parts),
+			list(args),
+			projection="count(*) as count",
 		)
+		return self._query_scalar(query, *params)
+
+	def _group_counts(
+		self,
+		field_name: str,
+		*,
+		where_parts: Sequence[str] | None = None,
+		args: Sequence[Any] | None = None,
+	) -> dict[str, int]:
+		query, params = self._select_where(
+			list(where_parts or []),
+			list(args or []),
+			projection=f"{field_name} as group_key, count(*) as count",
+		)
+		results = self._database.query("sql", f"{query} GROUP BY {field_name}", *params)
 		counts: dict[str, int] = {}
 		for row in results:
 			key = row.get("group_key")
@@ -495,6 +617,88 @@ class ArcadeMemoryRepository:
 				continue
 			counts[str(key)] = int(row.get("count") or 0)
 		return counts
+
+	def _inventory_where(self, *, include_document_chunks: bool) -> tuple[list[str], list[Any]]:
+		if include_document_chunks:
+			return [], []
+		return ["memory_type <> ?"], [MemoryType.DOCUMENT_CHUNK.value]
+
+	def _count_distinct_scope_tuples(self, where_parts: Sequence[str], args: Sequence[Any]) -> int:
+		query, params = self._select_where(
+			list(where_parts),
+			list(args),
+			projection="user_id, project_id, agent_id",
+		)
+		results = self._database.query(
+			"sql",
+			f"{query} GROUP BY user_id, project_id, agent_id",
+			*params,
+		)
+		return sum(1 for _ in results)
+
+	def _aggregate_scope_dimension(
+		self,
+		field_name: str,
+		*,
+		include_names: bool,
+		names_limit: int,
+		where_parts: Sequence[str],
+		args: Sequence[Any],
+	) -> dict[str, Any]:
+		values = self._distinct_group_values(field_name, where_parts=where_parts, args=args)
+		if not include_names:
+			return {
+				"count": len(values),
+				"names": [],
+				"truncated": False,
+				"remaining": 0,
+			}
+		names = values[:names_limit]
+		remaining = max(len(values) - len(names), 0)
+		return {
+			"count": len(values),
+			"names": names,
+			"truncated": remaining > 0,
+			"remaining": remaining,
+		}
+
+	def _distinct_group_values(
+		self,
+		field_name: str,
+		*,
+		where_parts: Sequence[str],
+		args: Sequence[Any],
+	) -> list[str]:
+		query, params = self._select_where(
+			[*where_parts, f"{field_name} IS NOT NULL"],
+			list(args),
+			projection=f"{field_name} as group_key",
+		)
+		results = self._database.query(
+			"sql",
+			f"{query} GROUP BY {field_name} ORDER BY {field_name} ASC",
+			*params,
+		)
+		return [
+			str(row.get("group_key"))
+			for row in results
+			if row.get("group_key") not in {None, ""}
+		]
+
+	def _aggregate_timestamp_bounds(
+		self,
+		where_parts: Sequence[str],
+		args: Sequence[Any],
+	) -> tuple[Any | None, Any | None]:
+		query, params = self._select_where(
+			list(where_parts),
+			list(args),
+			projection="min(created_at) as oldest_created_at, max(updated_at) as newest_updated_at",
+		)
+		result = self._database.query("sql", query, *params).first()
+		if result is None:
+			return None, None
+		return result.get("oldest_created_at"), result.get("newest_updated_at")
 
 	def _filtered_select_where(
 		self,
