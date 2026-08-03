@@ -5,4 +5,4 @@ fastembed==0.8.0
 httpx==0.28.1
 pydantic==2.13.4
 PyYAML==6.0.3
-uvicorn==0.51.0
+uvicorn==0.52.0
