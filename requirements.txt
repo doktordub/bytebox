@@ -1,6 +1,6 @@
 # Phase 0 runtime baseline captured on 2026-07-26.
 arcadedb-embedded==26.7.2
-fastapi==0.140.0
+fastapi==0.141.1
 fastembed==0.8.0
 httpx==0.28.1
 pydantic==2.13.4
