@@ -9,7 +9,7 @@ description = "ByteBox is a local-first agent memory system built around ArcadeD
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "arcadedb-embedded==26.7.2",
+    "arcadedb-embedded==26.8.1",
     "fastapi==0.140.0",
     "fastembed==0.8.0",
     "httpx==0.28.1",
