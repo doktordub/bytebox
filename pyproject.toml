@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "coverage[toml]==7.15.2",
+    "coverage[toml]==7.15.4",
     "detect-secrets==1.5.0",
     "hypothesis==6.161.5",
     "mypy==2.3.0",
